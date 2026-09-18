@@ -1,0 +1,12 @@
+{
+  "sdk": "1.47.0",
+  "tools": "1.47.0",
+  "workspace": "1.47.0",
+  "browser_use": "0.11.13",
+  "fastmcp": "3.4.7",
+  "mcp": "1.30.0",
+  "tested_image_id": "sha256:d9c7aba4691ea78836a117c5cc1c43071fd6dede1546a19a017edb7c7f752a15",
+  "platform": "linux/arm64",
+  "dependency_lock": "openhands-linux.lock",
+  "note": "The tested local image ID is authoritative. Rebuilding may produce a new image; run the compatibility gate again before adopting it. No x86_64 verification claimed."
+}

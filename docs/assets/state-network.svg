@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="710" viewBox="0 0 1120 710" role="img" aria-labelledby="title desc">
+<title id="title">User Agent 的七类任务状态</title><desc id="desc">检索、理解、规划、实现、执行、排错、评估形成带分支与回路的网络。继续、细化、纠偏作用于各状态。箭头展示典型转移，包含分支和回路。</desc>
+<defs><marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#607b94"/></marker></defs>
+<style>text{font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;fill:#24394d}.h{font-size:24px;font-weight:700}.n{font-size:20px;font-weight:700}.s{font-size:16px}.l{font-size:15px;fill:#526981}.e{fill:none;stroke:#607b94;stroke-width:2;marker-end:url(#a)}.box{fill:#fff;stroke:#87a4bf;stroke-width:1.5}</style>
+<rect width="1120" height="710" rx="20" fill="#f5f8fc"/><text x="40" y="45" class="h">User Agent：随对话进展切换工作意图</text><text x="40" y="76" class="s">基于真实用户对话归纳；同一个用户可以在不同意图之间往返</text>
+<path class="e" d="M293 165H448"/><text x="340" y="152" class="l">需要解释</text>
+<path class="e" d="M670 165H827"/><text x="701" y="152" class="l">形成方案</text>
+<path class="e" d="M940 210V300"/><text x="955" y="263" class="l">按方案改</text>
+<path class="e" d="M938 390V520"/><text x="951" y="463" class="l">实际运行</text>
+<path class="e" d="M827 565H670"/><text x="716" y="553" class="l">执行失败</text>
+<path class="e" d="M668 540C735 513 776 430 837 390"/><text x="716" y="453" class="l">据失败再改</text>
+<path class="e" d="M450 565H293"/><text x="338" y="553" class="l">检查修复</text>
+<path class="e" d="M179 520V212"/><text x="67" y="367" class="l">缺少已有信息</text>
+<path class="e" d="M293 535C322 466 365 300 482 210"/><text x="304" y="360" class="l">追问原因</text>
+<path class="e" d="M101 520C30 425 30 204 70 165"/><text x="41" y="468" class="l">回查</text>
+<path class="e" d="M1030 565C1100 565 1100 680 180 680V612"/><text x="744" y="664" class="l">核对结果是否满足需求</text>
+<path class="e" d="M482 610C430 673 689 692 646 613"/><text x="469" y="657" class="l">仍失败：继续排错</text>
+<rect class="box" x="70" y="120" width="223" height="90" rx="15"/><text x="181" y="155" text-anchor="middle" class="n">检索 RETRIEVE</text><text x="181" y="185" text-anchor="middle" class="s">找现有信息</text>
+<rect class="box" x="448" y="120" width="222" height="90" rx="15"/><text x="559" y="155" text-anchor="middle" class="n">理解 UNDERSTAND</text><text x="559" y="185" text-anchor="middle" class="s">解释原因与机制</text>
+<rect class="box" x="827" y="120" width="223" height="90" rx="15"/><text x="938" y="155" text-anchor="middle" class="n">规划 PLAN</text><text x="938" y="185" text-anchor="middle" class="s">收敛方案</text>
+<rect x="827" y="300" width="223" height="90" rx="15" fill="#e0edff" stroke="#87a4bf"/><text x="938" y="335" text-anchor="middle" class="n">实现 BUILD</text><text x="938" y="365" text-anchor="middle" class="s">提出修改请求</text>
+<rect class="box" x="827" y="520" width="223" height="90" rx="15"/><text x="938" y="555" text-anchor="middle" class="n">执行 OPERATE</text><text x="938" y="585" text-anchor="middle" class="s">运行、测试、部署</text>
+<rect x="448" y="520" width="222" height="90" rx="15" fill="#fff1d8" stroke="#c6ab79"/><text x="559" y="555" text-anchor="middle" class="n">排错 DEBUG</text><text x="559" y="585" text-anchor="middle" class="s">回应真实失败</text>
+<rect class="box" x="70" y="520" width="223" height="90" rx="15"/><text x="181" y="555" text-anchor="middle" class="n">评估 EVALUATE</text><text x="181" y="585" text-anchor="middle" class="s">判断结果是否合适</text>
+<rect x="400" y="290" width="330" height="150" rx="18" fill="#e9edf5" stroke="#a0b0c3" stroke-dasharray="5 4"/><text x="565" y="326" text-anchor="middle" class="n">各状态均可附着控制动作</text><text x="565" y="360" text-anchor="middle" class="s">继续 CONTINUE · 延续目标</text><text x="565" y="389" text-anchor="middle" class="s">细化 REFINE · 补充条件</text><text x="565" y="418" text-anchor="middle" class="s">纠偏 CORRECT · 更正方向</text>
+</svg>

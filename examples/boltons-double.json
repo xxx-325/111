@@ -1,0 +1,13 @@
+{
+  "repository": "runs/source-boltons",
+  "github_repository": "mahmoud/boltons",
+  "base": "6c7fa3e05659fac6515f661153c89d4ad02df168",
+  "tasks": [{"issue":319,"issue_file":"examples/issue-319.json","reference":"8ba3a7fa0d99b73f7f43c1aed82c571b941eecea"},{"issue":297,"issue_file":"examples/issue-297.json"}],
+  "image": "local/codex-cli:latest",
+  "max_rounds": 4,
+  "max_tool_steps": 20,
+  "max_seconds": 1800,
+  "command_timeout": 30,
+  "user": {"adapter":"api","model":"deepseek-chat","base_url":"https://api.deepseek.com","key_env":"DEEPSEEK_API_KEY"},
+  "code": {"adapter":"api","model":"deepseek-chat","base_url":"https://api.deepseek.com","key_env":"DEEPSEEK_API_KEY"}
+}

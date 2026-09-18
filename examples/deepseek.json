@@ -1,0 +1,12 @@
+{
+  "repository": "OWNER/REPO",
+  "base": "BASE_COMMIT",
+  "tasks": [{"issue": 1}, {"issue": 2, "reference": "FIX_COMMIT_OR_MERGED_PR_URL"}],
+  "image": "python:3.12-slim",
+  "max_rounds": 8,
+  "max_tool_steps": 30,
+  "max_seconds": 1800,
+  "command_timeout": 120,
+  "user": {"adapter": "api", "model": "deepseek-v4-flash", "base_url": "https://api.deepseek.com", "key_env": "DEEPSEEK_API_KEY"},
+  "code": {"adapter": "api", "model": "deepseek-v4-flash", "base_url": "https://api.deepseek.com", "key_env": "DEEPSEEK_API_KEY"}
+}

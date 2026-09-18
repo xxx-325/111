@@ -1,0 +1,46 @@
+{
+  "runtime": "openhands",
+  "progressive_issues": true,
+  "dynamic_transition_selection": true,
+  "dialogue_language": "zh-CN",
+  "code_prompt_mode": "sdk_default",
+  "verification_mode": "default",
+  "execution_backend": "ssh_sandbox",
+  "repository": "runs/source-click",
+  "github_repository": "pallets/click",
+  "swe_chain_evo": {
+    "repo_id": "Aiden0526/SWE-Chain-Evo",
+    "revision": "f98ba6aed4c1a40c527f6d70c186a6887888a332",
+    "chain_id": "pallets__click_multistep_v25_L10_s0",
+    "local_dir": "tmp/swe-chain-evo/raw",
+    "local_files_only": true,
+    "limit": 1
+  },
+  "image": "sha256:9815a7782c7024a7698b4aa2516f42fd5247b907f9a455cde2217773998069cf",
+  "execution_image": "sha256:32677e1b6b4b92e3c2b1dd241b4adbb9f09090c541ca02ab2e78c79bb6737b9b",
+  "max_seconds": 14400,
+  "condenser_max_size": 120,
+  "browser": false,
+  "user": {
+    "model": "deepseek-chat",
+    "base_url": "https://api.deepseek.com",
+    "key_env": "DEEPSEEK_API_KEY"
+  },
+  "code": {
+    "model": "deepseek-chat",
+    "base_url": "https://api.deepseek.com",
+    "key_env": "DEEPSEEK_API_KEY",
+    "candidate_pythonpath": "/workspace/candidate/src"
+  },
+  "judge": {
+    "model": "deepseek-chat",
+    "base_url": "https://api.deepseek.com",
+    "key_env": "DEEPSEEK_API_KEY",
+    "candidate_pythonpath": "/workspace/candidate/src"
+  },
+  "decomposer": {
+    "model": "deepseek-chat",
+    "base_url": "https://api.deepseek.com",
+    "key_env": "DEEPSEEK_API_KEY"
+  }
+}

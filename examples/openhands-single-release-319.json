@@ -1,0 +1,17 @@
+{
+  "runtime": "openhands",
+  "progressive_issues": true,
+  "dialogue_language": "zh-CN",
+  "repository": "runs/source-boltons",
+  "github_repository": "mahmoud/boltons",
+  "base": "6c7fa3e05659fac6515f661153c89d4ad02df168",
+  "tasks": [{"issue": 319, "issue_file": "examples/issue-319.json", "reference": "8ba3a7fa0d99b73f7f43c1aed82c571b941eecea"}],
+  "image": "sha256:d9c7aba4691ea78836a117c5cc1c43071fd6dede1546a19a017edb7c7f752a15",
+  "max_seconds": 1200,
+  "condenser_max_size": 120,
+  "browser": false,
+  "user": {"model": "deepseek-chat", "base_url": "https://api.deepseek.com", "key_env": "DEEPSEEK_API_KEY"},
+  "code": {"model": "deepseek-chat", "base_url": "https://api.deepseek.com", "key_env": "DEEPSEEK_API_KEY"},
+  "judge": {"model": "deepseek-chat", "base_url": "https://api.deepseek.com", "key_env": "DEEPSEEK_API_KEY"},
+  "decomposer": {"model": "deepseek-chat", "base_url": "https://api.deepseek.com", "key_env": "DEEPSEEK_API_KEY"}
+}

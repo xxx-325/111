@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="590" viewBox="0 0 1120 590" role="img" aria-labelledby="title desc">
+<title id="title">User Agent、Code Agent 与 Judger 的协作</title>
+<desc id="desc">User Agent 和 Code Agent 双向对话；Judger 检查实际修改，将使用反馈交给 User Agent，形成多轮协作。</desc>
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#59748d"/></marker></defs>
+<style>text{font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;fill:#23364b}.title{font-size:26px;font-weight:700}.name{font-size:28px;font-weight:700}.body{font-size:20px}.label{font-size:18px;fill:#506981}.edge{fill:none;stroke:#59748d;stroke-width:2.4;marker-end:url(#arrow)}</style>
+<rect width="1120" height="590" rx="20" fill="#f5f8fc"/>
+<text x="42" y="52" class="title">在真实修改与反馈中，形成连续对话</text>
+<rect x="70" y="131" width="300" height="142" rx="18" fill="#e0edff" stroke="#86a9d4"/>
+<text x="220" y="176" text-anchor="middle" class="name">User Agent</text>
+<text x="220" y="213" text-anchor="middle" class="body">提出需求 · 补充信息</text>
+<text x="220" y="244" text-anchor="middle" class="body">追问与反馈</text>
+<rect x="750" y="131" width="300" height="142" rx="18" fill="#e0f2ed" stroke="#87b7a6"/>
+<text x="900" y="176" text-anchor="middle" class="name">Code Agent</text>
+<text x="900" y="213" text-anchor="middle" class="body">阅读代码 · 修改实现</text>
+<text x="900" y="244" text-anchor="middle" class="body">运行并回复</text>
+<path class="edge" d="M370 169H748"/><text x="560" y="151" text-anchor="middle" class="label">需求、澄清回答、问题反馈</text>
+<path class="edge" d="M750 237H372"/><text x="560" y="222" text-anchor="middle" class="label">修改结果、解释、澄清问题</text>
+<rect x="405" y="410" width="310" height="138" rx="18" fill="#fff1d8" stroke="#d8b772"/>
+<text x="560" y="454" text-anchor="middle" class="name">Judger</text>
+<text x="560" y="492" text-anchor="middle" class="body">依据完整 issue 检查结果</text>
+<text x="560" y="523" text-anchor="middle" class="body">查看实现 · 执行测试</text>
+<path class="edge" d="M900 273C900 370 838 479 718 479"/>
+<text x="870" y="373" class="label">实际修改与运行结果</text>
+<path class="edge" d="M405 479C264 479 220 388 220 275"/>
+<text x="53" y="365" class="label">是否解决、哪里仍不对</text>
+<text x="560" y="332" text-anchor="middle" class="body">问题未解决，就继续反馈与修改</text>
+</svg>

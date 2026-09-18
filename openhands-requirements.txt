@@ -1,0 +1,8 @@
+openhands-sdk==1.47.0
+openhands-tools==1.47.0
+openhands-workspace==1.47.0
+openhands-agent-server==1.47.0
+huggingface-hub==1.31.0
+browser-use==0.11.13
+fastmcp==3.4.7
+mcp==1.30.0

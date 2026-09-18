@@ -1,0 +1,7 @@
+{
+  "number":297,
+  "html_url":"https://github.com/mahmoud/boltons/issues/297",
+  "title":"daterange(start, stop, inclusive=True) returns an infinite iterator when start is same as stop",
+  "body":"expected to get `start` exactly once.",
+  "source":"GitHub REST API, retrieved for this implementation; frozen input to avoid API rate limits"
+}

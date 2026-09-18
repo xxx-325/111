@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Session Simulator · Pipeline</title>
+<style>
+:root{color-scheme:light dark;--bg:light-dark(#f4f6f8,#14171b);--paper:light-dark(#fff,#20252b);--text:light-dark(#1d2733,#eef2f6);--muted:light-dark(#607080,#aeb9c5);--line:light-dark(#dbe2e8,#3b444d);--accent:#3584e4;--judge:#8e61c9}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,sans-serif}main{max-width:1050px;margin:auto;padding:36px 20px}h1{font-size:30px;margin:0 0 8px}.lead{color:var(--muted);margin:0 0 28px}.flow{display:grid;grid-template-columns:repeat(7,minmax(110px,1fr));gap:10px;align-items:stretch}.step{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:15px}.step strong{display:block;margin-bottom:6px}.step span{font-size:14px;color:var(--muted)}.arrow{display:none}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:28px}.card{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:18px}.card.user{border-top:4px solid var(--accent)}.card.code{border-top:4px solid #3aa76d}.card.judge{border-top:4px solid var(--judge)}code{font:14px ui-monospace,monospace}.loop{margin-top:24px;padding:18px;border-left:5px solid var(--accent);background:var(--paper);border-radius:8px}.out{margin-top:24px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:18px}ul{padding-left:20px}@media(max-width:900px){.flow{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}@media(max-width:520px){.flow{grid-template-columns:1fr}main{padding:24px 14px}}
+</style>
+<main>
+  <h1>Dialogue generation pipeline</h1>
+  <p class="lead">任务被逐步披露，Code 在隔离候选中工作，Judge 私下验收；公开产物只保留 User 与 Code 的最终消息。</p>
+
+  <section class="flow" aria-label="pipeline steps">
+    <div class="step"><strong>1 · Task source</strong><span>issue、commit、PR 或连续任务</span></div>
+    <div class="step"><strong>2 · Decompose</strong><span>拆成可逐步释放的信息片段</span></div>
+    <div class="step"><strong>3 · User</strong><span>状态机选择合法动作，User 自己表达</span></div>
+    <div class="step"><strong>4 · Code</strong><span>读取、修改并测试候选实现</span></div>
+    <div class="step"><strong>5 · Judge</strong><span>在独立副本中判断 solved / unsolved / uncertain</span></div>
+    <div class="step"><strong>6 · Continue</strong><span>失败则反馈，成功则接受或自然追问</span></div>
+    <div class="step"><strong>7 · Export</strong><span>输出纯公开 dialogue</span></div>
+  </section>
+
+  <section class="grid">
+    <article class="card user"><h2>User</h2><ul><li>只看已释放需求与公开对话</li><li>没有仓库读取工具</li><li>用状态机约束推进方式</li></ul></article>
+    <article class="card code"><h2>Code</h2><ul><li>只看公开 User 消息</li><li>候选工作区可写</li><li>看不到参考修复和未来任务</li></ul></article>
+    <article class="card judge"><h2>Judge</h2><ul><li>查看完整当前任务</li><li>候选和参考只读</li><li>私有检查不会直接进入公开对话</li></ul></article>
+  </section>
+
+  <section class="loop">
+    <strong>循环规则：</strong>
+    <code>unsolved → 一条可观察反馈 → User → Code → Judge</code>；
+    <code>solved → 接受 / 解释追问 / 运行验证</code>；
+    <code>uncertain → 保留现场，不伪造通过</code>。
+  </section>
+
+  <section class="out">
+    <h2>公开输出</h2>
+    <p><code>dialogue.json</code> 与 <code>dialogue.html</code> 只含双方公开文本。工具事件、Judge 证据、参考材料、模型请求和 checkpoint 保留在本地忽略目录中。</p>
+  </section>
+</main>
+</html>

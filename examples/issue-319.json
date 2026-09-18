@@ -1,0 +1,7 @@
+{
+  "number":319,
+  "html_url":"https://github.com/mahmoud/boltons/issues/319",
+  "title":"boltons.timeutils when start with 12 month and step=(1, 0, 0), result is wrong. because date.month start with 1, not 0",
+  "body":"start_day = date(year=2012, month=12, day=25)\r\nend_day = date(year=2023, month=1,  day=1)\r\nfor day in daterange(start_day, end_day, step=(1, 0, 0), inclusive=False):\r\n    print(repr(day))",
+  "source":"GitHub REST API, retrieved for this implementation; frozen input to avoid API rate limits"
+}

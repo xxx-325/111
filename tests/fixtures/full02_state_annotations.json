@@ -1,0 +1,12 @@
+[
+  {"task": 1, "turn": "initial", "state": "BUILD", "control": "CONTINUE"},
+  {"task": 2, "turn": "initial", "state": "BUILD", "control": "CONTINUE"},
+  {"task": 3, "turn": "initial", "state": "BUILD", "control": "CONTINUE"},
+  {"task": 3, "turn": "clarification", "state": "BUILD", "control": "REFINE"},
+  {"task": 4, "turn": "initial", "state": "BUILD", "control": "CONTINUE"},
+  {"task": 4, "turn": "failure_feedback", "state": "DEBUG", "control": "CORRECT"},
+  {"task": 5, "turn": "initial", "state": "BUILD", "control": "CONTINUE"},
+  {"task": 5, "turn": "failure_feedback", "state": "DEBUG", "control": "CORRECT"},
+  {"task": 6, "turn": "initial", "state": "BUILD", "control": "CONTINUE"},
+  {"task": 6, "turn": "failure_feedback", "state": "DEBUG", "control": "CORRECT"}
+]

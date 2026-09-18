@@ -1,0 +1,10 @@
+[
+  {"id":"s01","actions":["finish"],"context":"代码修改完成，当前没有新的问题。","reply":"可以了"},
+  {"id":"s02","actions":["advance"],"context":"当前任务结束，还有下一项真实需求。","reply":"这个可以，接着看下一个问题"},
+  {"id":"s03","actions":["request"],"context":"用户确认方案并要求开始修改。","reply":"按这个方向改一下"},
+  {"id":"s04","actions":["repair"],"context":"修改后仍能复现原来的问题。","reply":"还是不对，输入相同的时候结果会重复"},
+  {"id":"s05","actions":["check"],"context":"用户希望代码代理执行现有测试。","reply":"你跑一下现有测试看看"},
+  {"id":"s06","actions":["clarify"],"context":"用户补充一个必要的使用条件。","reply":"这个只会在关闭缓存后出现"},
+  {"id":"s11","actions":["explain"],"context":"用户想了解刚才修改的实现机制。","reply":"这个具体是怎么处理的？"},
+  {"id":"s12","actions":["explain"],"context":"用户希望更简洁的说明。","reply":"简单说一下原理就行"}
+]
