@@ -1,6 +1,7 @@
 """Allowlisted User views; private Judge evidence remains host authority."""
 import copy
 from .relay import append
+from ..state_machine import STATE_GUIDANCE
 
 
 def initial_without_checks(state, current):
@@ -72,6 +73,15 @@ def followup_instruction(result):
     return '自然回应 Code 的上一条消息。'
 
 
+def active_request(state):
+    """Expose only the current send permit and its host-owned intent."""
+    permit = state.data.get('permit')
+    if not permit or state.data['phase'] != 'user' or state.data['status'] != 'running':
+        return None
+    return dict(permit_id=permit['id'], state=permit['state'],
+                control=permit['control'], reason=STATE_GUIDANCE[permit['state']])
+
+
 def state_view(state, current):
     raw = state.view()
     result = {k: copy.deepcopy(raw[k]) for k in (
@@ -86,6 +96,9 @@ def state_view(state, current):
         result['communication'] = {key: copy.deepcopy(communication[key])
                                    for key in ('stage', 'last_code_reply')}
     result['task_result'] = task_feedback(current)
+    request = active_request(state)
+    if request:
+        result['active_request'] = request
     if initial_without_checks(state, current):
         for key in ('checks', 'task_result', 'blockers', 'unresolved_failures'):
             result.pop(key, None)
@@ -100,7 +113,7 @@ def control_result(operation, result, state, current):
             '本次操作未执行。这是内部控制结果，不是产品使用故障，不转述给对话另一方。可根据已有观察回应，或直接委托 Code 检查。'])
     public = {k: copy.deepcopy(result[k]) for k in (
         'accepted', 'handoff', 'paused', 'ended', 'retained_private', 'permit_id', 'next_requirement',
-        'current_requirement', 'classification_warning') if k in result}
+        'current_requirement') if k in result}
     # A transition returns the permit directly, rather than under permit_id.
     if operation == 'transition' and result.get('accepted'):
         for key in ('id', 'task_id', 'state', 'control', 'reason'):
@@ -119,14 +132,19 @@ def control_result(operation, result, state, current):
                           for reason in reasons)
         invalid_attachment = result.get('reason') == 'only raw runtime error or wrong output can be attached'
         state_mismatch = 'Request type/control does not match the proposed action.' in reasons
-        if operation == 'send' and observation.get('raw_result_available') is False and invalid_attachment:
+        request = active_request(state)
+        if operation == 'send' and state_mismatch and request:
+            public['active_request'] = request
+            public['reason'] = ('正文与本轮已选请求不一致。按 active_request 的意图修改正文，'
+                                '使用同一 permit_id 再发送；不要重新申请状态。')
+        elif operation == 'send' and observation.get('raw_result_available') is False and invalid_attachment:
             public['reason'] = ('这次没有可粘贴的原始运行结果。直接用用户口吻转述 '
                                 'task_result.observation.summary，不要使用 [[运行结果]]。')
         else:
             public['reason'] = result.get('reason') or (
                 '发送内容引用了运行结果。请在正文相应位置写 [[运行结果]]，由宿主附上当前已审核原文。'
                 if missing_raw and observation.get('raw_result_available') is True else
-                '请求类型或推进方式与当前消息不一致；请按当前意图选择七类请求，并在澄清时延续类型、使用 REFINE。'
+                '当前没有可用的发送许可；先调用 session_state 确认当前任务。'
                 if state_mismatch else
                 'Action rejected; check current state, intent and supported facts.')
         public['unresolved'] = state.pending_checks()

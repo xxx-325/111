@@ -8,7 +8,9 @@
     {"issue": 319, "issue_file": "examples/issue-319.json", "reference": "8ba3a7fa0d99b73f7f43c1aed82c571b941eecea"},
     {"issue": 297, "issue_file": "examples/issue-297.json"}
   ],
-  "image": "sha256:d9c7aba4691ea78836a117c5cc1c43071fd6dede1546a19a017edb7c7f752a15",
+  "execution_backend": "ssh_sandbox",
+  "image": "sha256:9815a7782c7024a7698b4aa2516f42fd5247b907f9a455cde2217773998069cf",
+  "execution_image": "sha256:32677e1b6b4b92e3c2b1dd241b4adbb9f09090c541ca02ab2e78c79bb6737b9b",
   "max_seconds": 1200,
   "condenser_max_size": 120,
   "browser": false,

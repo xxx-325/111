@@ -60,10 +60,12 @@ try:
     x=terminal('cwd-env-next','pwd; echo "$PROBE_VALUE"');assert '/tmp' in content(x) and 'retained' in content(x),x
     x=terminal('timeout','sleep 1; echo resumed',timeout=.1);assert exitcode(x)==-1,x
     x=terminal('continuation','',timeout=3);assert exitcode(x)==0 and 'resumed' in content(x),x
+    x=terminal('timeout-input-continuation','sleep 1; echo input-resumed; false',timeout=.1);assert exitcode(x)==-1 and x['timeout'],x
+    x=terminal('input-continuation','',is_input=True,timeout=3);assert exitcode(x)==1 and not x['timeout'] and 'input-resumed' in content(x),x
     x=terminal('input-wait',"read -r answer; printf 'received:%s\n' \"$answer\"",timeout=.1);assert exitcode(x)==-1,x
     terminal('input-text','hello',is_input=True)
     terminal('input-enter','ENTER',is_input=True)
-    x=terminal('input-result','',timeout=3);assert exitcode(x)==0 and 'received:hello' in content(x),x
+    x=terminal('input-result','',is_input=True,timeout=3);assert exitcode(x)==0 and 'received:hello' in content(x),x
     x=terminal('background','sleep 1 & echo background-ok');assert exitcode(x)==0 and 'background-ok' in content(x),x
     x=terminal('long-output',"python -c 'print(\"z\"*60000)'");assert exitcode(x)==0 and '/workspace/tool-output/' in content(x) and '/sdk/' not in content(x),x
     if cfg['role']=='judge':

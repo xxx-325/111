@@ -375,12 +375,64 @@ class JudgeTests(unittest.TestCase):
             self.assertTrue(episode.carry_post_solved_verdict())
             self.assertEqual(len(episode.current()['verdict_carries']), 1)
 
+    def test_consecutive_read_only_followups_reuse_original_judge_evidence(self):
+        with tempfile.TemporaryDirectory() as root:
+            episode = self.episode(root)
+            self.publish_solved_followup(episode, root, 'UNDERSTAND')
+            self.assertTrue(episode.carry_post_solved_verdict())
+            checks_before = list(episode.state.data['checks'])
+            for revision, state in ((3, 'PLAN'), (4, 'RETRIEVE')):
+                permit = episode.state.transition(dict(task_id='task-1', state=state,
+                    control='REFINE', reason='Discuss the current implementation'))
+                payload, _ = episode.prepare_send_payload(dict(task_id='task-1',
+                    permit_id=permit['id'], text='Explain the current approach'))
+                message = episode.state.send(payload)
+                message['published'] = True
+                episode.after_message_published(message)
+                episode.saved['revision'] = revision
+                episode.state.data.update(phase='user',
+                    code_reply={'id': f'code{revision}', 'text': 'Explanation only'})
+                self.assertTrue(episode.carry_post_solved_verdict())
+                self.assertTrue(episode.carry_post_solved_verdict())
+                episode.acceptance_gate()
+            self.assertEqual(episode.state.data['checks'], checks_before)
+            self.assertEqual(len(episode.current()['verdict_carries']), 3)
+
+    def test_second_carry_requires_matching_prior_record(self):
+        invalidations = (
+            ('task_id', 'task-0'), ('candidate_version', 'old-hash'),
+            ('source_evidence_id', 'other-judge'), ('current_revision', 0),
+            ('schema', 'unknown'), ('state', 'OPERATE'),
+        )
+        for key, value in invalidations:
+            with self.subTest(field=key), tempfile.TemporaryDirectory() as root:
+                episode = self.episode(root)
+                self.publish_solved_followup(episode, root, 'UNDERSTAND')
+                self.assertTrue(episode.carry_post_solved_verdict())
+                permit = episode.state.transition(dict(task_id='task-1', state='PLAN',
+                    control='REFINE', reason='Discuss the current implementation'))
+                payload, _ = episode.prepare_send_payload(dict(task_id='task-1',
+                    permit_id=permit['id'], text='Explain this approach'))
+                message = episode.state.send(payload)
+                message['published'] = True
+                episode.after_message_published(message)
+                episode.saved['revision'] = 3
+                episode.state.data.update(phase='user',
+                    code_reply={'id': 'code3', 'text': 'Explanation only'})
+                episode.current()['verdict_carries'][0][key] = value
+                self.assertFalse(episode.carry_post_solved_verdict())
+                with self.assertRaises(TransitionError):
+                    episode.acceptance_gate()
+
     def test_changed_candidate_or_operate_followup_requires_judge(self):
-        for state, change_candidate in (('PLAN', True), ('OPERATE', False)):
+        for state, change_candidate in (('PLAN', True), ('PLAN', 'mode'), ('OPERATE', False)):
             with self.subTest(state=state), tempfile.TemporaryDirectory() as root:
                 episode = self.episode(root)
                 candidate, _ = self.publish_solved_followup(episode, root, state)
-                if change_candidate:
+                if change_candidate == 'mode':
+                    source = candidate / 'a.py'
+                    source.chmod(source.stat().st_mode ^ 0o111)
+                elif change_candidate:
                     (candidate / 'a.py').write_text('changed')
                 episode.saved['closing'] = False
                 episode.progress['job'] = None

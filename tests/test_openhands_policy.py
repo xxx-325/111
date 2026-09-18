@@ -1,6 +1,9 @@
 """Prompt/configuration tests, not evidence of human-like behavior."""
 import json
 import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 from simulator.openhands.policy import role_prompts, policy_record, PROMPTS, LANGUAGES
 
 
@@ -36,3 +39,22 @@ class PolicyTests(unittest.TestCase):
     def test_user_state_does_not_repeat_tool_protocol(self):
         from simulator.openhands.state import TaskState
         self.assertNotIn('protocol',TaskState().view())
+
+    def test_changed_relay_policy_cannot_resume_old_checkpoint(self):
+        from simulator.openhands.episode import OpenHandsEpisode
+
+        config = dict(dialogue_language='zh-CN', dynamic_transition_selection=True,
+                      execution_backend='ssh_sandbox', execution_image='sha256:' + 'a' * 64)
+        old_policy = policy_record('zh-CN')
+        old_policy['implementation_sha256']['relay.py'] = 'old-error-protocol'
+        with tempfile.TemporaryDirectory() as folder:
+            private = Path(folder) / 'private'
+            private.mkdir()
+            checkpoint = private / 'checkpoint.json'
+            original = json.dumps(dict(schema=OpenHandsEpisode.checkpoint_schema,
+                                       config=config, policy=old_policy))
+            checkpoint.write_text(original)
+            with patch('simulator.openhands.sandbox.pinned_image'), self.assertRaisesRegex(
+                    ValueError, 'no automatic migration'):
+                OpenHandsEpisode(config, folder, resume=True)
+            self.assertEqual(checkpoint.read_text(), original)

@@ -59,13 +59,13 @@ class UserProjectionTests(unittest.TestCase):
         self.assertEqual(control_result('transition',result,self.state,self.current),result)
         self.assertIn('PRIVATE',json.dumps(self.current))
 
-    def test_safe_classification_warning_reaches_the_sdk_observation(self):
+    def test_transition_warning_stays_private(self):
         warning='Request type/control classification may not match the proposed action.'
         result={'accepted':True,'permit_id':'permit','classification_warning':warning}
         projected=control_result('transition',result,self.state,self.current)
         observation=HostObservation(result=projected)
         visible=json.loads(observation.to_llm_content[0].text)
-        self.assertEqual(visible['classification_warning'],warning)
+        self.assertNotIn('classification_warning', visible)
         self.assertNotIn('reasons',visible)
 
         ordinary=control_result('transition',{'accepted':True,'permit_id':'next'},
@@ -185,6 +185,24 @@ class UserProjectionTests(unittest.TestCase):
             'private semantic detail',
             'Request type/control does not match the proposed action.',
         ]}
-        projected = control_result('transition', result, self.state, self.current)
-        self.assertIn('REFINE', projected['reason'])
+        permit = self.state.transition(dict(task_id='task-1', state='OPERATE',
+            control='CONTINUE', reason='Run the candidate'))
+        projected = control_result('send', result, self.state, self.current)
+        self.assertEqual(projected['active_request']['permit_id'], permit['id'])
+        self.assertEqual(projected['active_request']['state'], 'OPERATE')
+        self.assertIn('不要重新申请', projected['reason'])
+        self.assertIn('修改正文', projected['reason'])
         self.assertNotIn('private semantic detail', json.dumps(projected))
+
+    def test_active_request_survives_state_read_but_not_publication(self):
+        state = TaskState()
+        self.assertNotIn('active_request', state_view(state, {}))
+        permit = state.transition(dict(task_id='task-1', state='OPERATE',
+            control='CONTINUE', reason='PRIVATE proposal annotation', evidence_ids=[]))
+        active = state_view(state, {})['active_request']
+        self.assertEqual(active['permit_id'], permit['id'])
+        self.assertEqual(active['control'], 'CONTINUE')
+        self.assertNotIn('PRIVATE', json.dumps(active))
+        self.assertNotIn('evidence_ids', active)
+        state.send(dict(task_id='task-1', permit_id=permit['id'], text='Run it'))
+        self.assertNotIn('active_request', state_view(state, {}))

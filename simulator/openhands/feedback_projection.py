@@ -230,18 +230,25 @@ def project_latest_feedback(observations, summary='', symptom=''):
             continue
         eligible.append(item)
     identifiers = [item['id'] for item in eligible]
+    # Ordinary shell output after a complete execution block must not replace
+    # the concrete result. A newer labeled block that is malformed is kept
+    # fail-closed instead of silently falling back to an older result.
     for item in reversed(eligible):
         raw = observation_output(item)
         try:
-            selector = {'evidence_id': item['id']}
-            if symptom:
-                selector['symptom'] = symptom
-            if summary:
-                selector['summary'] = summary
-            return project_public_feedback(selector, eligible, identifiers)
+            project_public_feedback(
+                {'evidence_id': item['id']}, eligible, identifiers
+            )
         except PublicFeedbackError:
             if _LABEL.search(raw):
                 raise
+            continue
+        selector = {'evidence_id': item['id']}
+        if symptom:
+            selector['symptom'] = symptom
+        if summary:
+            selector['summary'] = summary
+        return project_public_feedback(selector, eligible, identifiers)
     if (summary or symptom) and eligible:
         selector = {'evidence_id': eligible[-1]['id']}
         if symptom:

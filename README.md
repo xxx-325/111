@@ -40,12 +40,20 @@ Generated runs, model logs, reference material, local datasets, virtual environm
 
 OpenHands dependencies are pinned in `openhands-requirements.txt` and `openhands-linux.lock`.
 
-Build the local control image from the repository root when needed:
-
+Build the control and execution images from the repository root:
 ```bash
 docker build -f containers/openhands/Dockerfile -t local/session-openhands:1.47.0 .
 docker build -f docker/control/Dockerfile -t local/agent-session-control:1.47.0 .
+docker build -f docker/sandbox/Dockerfile -t local/agent-session-execution:1 docker/sandbox
+docker image inspect --format '{{.Id}}' local/agent-session-control:1.47.0
+docker image inspect --format '{{.Id}}' local/agent-session-execution:1
 ```
+
+Set `image` to the control image ID and `execution_image` to the separate execution
+image ID in your configuration. Example digests are historical local IDs, not
+pullable image references. Build both images and replace the IDs before running.
+The execution Docker probe has been verified on linux/arm64 containers on a macOS
+host; other host/architecture combinations have not been verified here.
 
 ## Install
 
@@ -104,7 +112,7 @@ The exporter writes `dialogue.json` and `dialogue.html`. Private checkpoints, to
 
 1. Prepare the current task and split its known information into small symptom/cause fragments.
 2. Release at most one new fragment for a turn.
-3. Let User select a valid state-machine action and send a natural request.
+3. Let the host sample a feasible state-machine intent and User express that intent.
 4. Let Code inspect and modify only the candidate sandbox.
 5. Let Judge inspect an independent candidate copy and the current reference.
 6. If unsolved, project only an observable failure back to User and continue.
@@ -112,6 +120,18 @@ The exporter writes `dialogue.json` and `dialogue.html`. Private checkpoints, to
 8. Release the next task only after acceptance.
 
 See [docs/execution-isolation.md](docs/execution-isolation.md) for the trust boundary.
+
+A rejected state-mismatched draft stays private. User receives the current
+`active_request` and corrects its message under the same permit; reapplying does
+not redraw an accepted selection. Read-only post-solved questions may reuse the
+original verdict through recorded carries for the same task and candidate hash.
+Code changes or an OPERATE follow-up require another Judge check. Acceptance of
+the last task ends silently.
+
+Known limitations: semantic review can still misclassify requests, and state
+guidance can produce repetitive, report-like User wording. State diversity is
+not evidence of naturalness. `static_reference` acceptance does not mean every
+dataset test ran or passed. These remain review targets, not solved claims.
 
 ## Configuration notes
 
@@ -127,6 +147,12 @@ Example files contain public task metadata only. Replace local checkout paths, i
 
 ## Testing
 
+Validate example configuration without Docker, model calls, or SDK imports:
+
+```bash
+python -m simulator.openhands.validate_config
+```
+
 Run the dependency-independent and OpenHands contract suite:
 
 ```bash
@@ -140,6 +166,12 @@ SIMULATOR_DOCKER_TEST_IMAGE=your-image \
   OPENHANDS_SUPPRESS_BANNER=1 \
   python -m unittest discover -s tests
 ```
+
+Terminal empty-command reads support either value of `is_input` without sending
+keystrokes or replaying the command. Candidate fingerprints include permissions
+and empty directories. Relay errors retain structured private diagnostics and
+stop on audit/response-write failure; no automatic retry is added. Existing
+policy hashes reject incompatible old checkpoints rather than migrating runs.
 
 ## Security and data handling
 

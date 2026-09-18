@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from ..episode import clone_candidate, save
+from .judge import candidate_hash
 from .sandbox import writable_tree
 
 
@@ -52,7 +53,7 @@ def _target_status(target, rows):
 
 
 def _apply_test_patch(target, patch):
-    before = _tree_hash(target)
+    before = candidate_hash(target)
     environment = {
         **os.environ,
         "GIT_CEILING_DIRECTORIES": str(Path(target).resolve().parent),
@@ -76,19 +77,8 @@ def _apply_test_patch(target, patch):
         capture_output=True,
         env=environment,
     )
-    if _tree_hash(target) == before:
+    if candidate_hash(target) == before:
         raise RuntimeError("SWE-Chain-Evo test patch made no changes")
-
-
-def _tree_hash(root):
-    digest = hashlib.sha256()
-    for path in sorted(Path(root).rglob("*")):
-        if path.is_symlink() or not (path.is_file() or path.is_dir()):
-            raise ValueError("unsafe SWE-Chain-Evo test copy")
-        if path.is_file():
-            digest.update(str(path.relative_to(root)).encode() + b"\0")
-            digest.update(hashlib.sha256(path.read_bytes()).digest())
-    return digest.hexdigest()
 
 
 def _file_hashes(root):
@@ -144,7 +134,7 @@ def run_required_tests(
     target = experiments / label
     if target.exists():
         raise FileExistsError("SWE-Chain-Evo experiment already exists")
-    source_hash = _tree_hash(source)
+    source_hash = candidate_hash(source)
     clone_candidate(Path(source), target)
     patch_files = []
     if apply_test_patch:

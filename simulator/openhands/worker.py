@@ -15,7 +15,7 @@ from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.terminal import TerminalTool
 from openhands.tools.task_tracker import TaskTrackerTool
 from openhands.tools.browser_use import BrowserToolSet
-from .control_tools import CONTROL_TOOLS, request_control
+from .control_tools import CONTROL_TOOLS, ControlRequestError, request_control
 from .judge_tools import JUDGE_TOOLS
 from .tool_wording import tool_specs
 from openhands.sdk.security.confirmation_policy import AlwaysConfirm
@@ -256,14 +256,19 @@ def main():
                         },
                     )
                 except Exception as exc:
-                    write(
-                        result_path,
-                        {
-                            "status": "error",
-                            "error_type": type(exc).__name__,
-                            "traceback": traceback.format_exc(),
-                        },
-                    )
+                    value = {
+                        "status": "error",
+                        "error_type": type(exc).__name__,
+                        "traceback": traceback.format_exc(),
+                    }
+                    if isinstance(exc, ControlRequestError):
+                        value.update(
+                            error_code=exc.error_code,
+                            request_id=exc.request_id,
+                            retryable=exc.retryable,
+                            status_code=exc.status,
+                        )
+                    write(result_path, value)
                 write(
                     Path("/outbox/active.json"),
                     {"command_id": path.stem, "status": "stopped"},

@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 from simulator.openhands.state import TaskState
 from simulator.openhands.episode import OpenHandsEpisode
 from simulator.openhands.guard import MessageGuard
+from simulator.openhands.user_projection import control_result
 
 
 class GateFixture:
@@ -25,6 +26,58 @@ class GateFixture:
 
 
 class CommunicationTests(unittest.TestCase):
+    def test_send_mismatch_keeps_permit_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as root:
+            episode = OpenHandsEpisode.__new__(OpenHandsEpisode)
+            episode.private = Path(root)
+            episode.state = TaskState()
+            permit = episode.state.transition({
+                'task_id': 'task-1', 'state': 'BUILD', 'control': 'CONTINUE',
+                'reason': 'Ask Code to implement the requested change',
+            })
+            episode.saved = {
+                'control_results': {}, 'public': [], 'code_sources': [],
+                'tasks': [{'kind': 'issue', 'title': 'Bug', 'body': 'Description'}],
+            }
+            episode.collect_user_sources = MagicMock()
+            episode.requirement = MagicMock(return_value={'title': 'Bug', 'body': 'Description'})
+            episode.persist = MagicMock()
+            episode.public = MagicMock()
+            episode.guard = MagicMock()
+            episode.guard.review.return_value = {
+                'allowed': False,
+                'handoff_kind': 'request_or_feedback',
+                'warnings': [],
+                'reasons': ['Request type/control does not match the proposed action.',
+                            'private semantic detail'],
+            }
+            packet = {
+                'request_id': 'send-mismatch-1', 'operation': 'send',
+                'payload': {'task_id': 'task-1', 'permit_id': permit['id'],
+                            'text': '请继续处理', 'evidence_ids': []},
+            }
+            before = copy.deepcopy(episode.state.data)
+            first = episode._control(packet)
+            episode.state = TaskState(json.loads(json.dumps(episode.state.data)))
+            episode.saved = json.loads(json.dumps(episode.saved))
+            second = episode._control(packet)
+
+            self.assertFalse(first['accepted'])
+            self.assertEqual(first, second)
+            self.assertEqual(episode.guard.review.call_count, 1)
+            self.assertEqual(episode.state.data, before)
+            self.assertEqual(episode.state.data['permit'], permit)
+            self.assertEqual(episode.state.data['messages'], [])
+            self.assertEqual(episode.state.view()['published_messages'], 0)
+            episode.public.assert_not_called()
+
+            projected = control_result('send', first, episode.state, {})
+            self.assertNotIn('reasons', projected)
+            self.assertNotIn('private semantic detail', json.dumps(projected))
+            self.assertIn('修改正文', projected['reason'])
+            self.assertIn('不要重新申请状态', projected['reason'])
+            self.assertEqual(projected['active_request']['permit_id'], permit['id'])
+
     def test_successful_control_returns_only_safe_classification_warning(self):
         with tempfile.TemporaryDirectory() as root:
             episode = OpenHandsEpisode.__new__(OpenHandsEpisode)

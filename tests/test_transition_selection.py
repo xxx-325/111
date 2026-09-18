@@ -1,5 +1,7 @@
 import copy
+import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -13,6 +15,12 @@ from simulator.openhands.transition_selection import (
     select_transition,
     transition_turn,
 )
+from simulator.openhands.judge import candidate_hash
+from simulator.openhands.user_projection import UserViewMixin
+
+
+class ProjectedEpisodeFixture(UserViewMixin, OpenHandsEpisode):
+    pass
 
 
 class ChoiceFixture:
@@ -59,6 +67,62 @@ class TransitionSelectionTests(unittest.TestCase):
         changed = copy.deepcopy(first)
         changed[0]["reason"] = "A genuinely corrected intent"
         self.assertNotEqual(candidates_sha256(first), candidates_sha256(changed))
+
+    def test_candidate_hash_includes_permissions_and_empty_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'candidate'
+            root.mkdir()
+            script = root / 'run.sh'
+            script.write_text('#!/bin/sh\necho ok\n')
+            script.chmod(0o755)
+            executable = candidate_hash(root)
+            script.chmod(0o644)
+            self.assertNotEqual(executable, candidate_hash(root))
+            before = candidate_hash(root)
+            (root / 'empty').mkdir()
+            self.assertNotEqual(before, candidate_hash(root))
+            (root / 'empty').rmdir()
+            self.assertEqual(before, candidate_hash(root))
+
+    def test_candidate_hash_rejects_invalid_roots_and_unsafe_entries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'candidate'
+            with self.assertRaises(ValueError):
+                candidate_hash(root)
+            root.mkdir()
+            file_root = Path(directory) / 'file'
+            file_root.write_text('x')
+            with self.assertRaises(ValueError):
+                candidate_hash(file_root)
+            link = root / 'link'
+            link.symlink_to(file_root)
+            with self.assertRaises(ValueError):
+                candidate_hash(root)
+            link.unlink()
+            os.mkfifo(root / 'pipe')
+            with self.assertRaises(ValueError):
+                candidate_hash(root)
+
+    def test_candidate_hash_tracks_content_path_type_but_not_timestamp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            item = root / 'item'
+            item.write_text('first')
+            first = candidate_hash(root)
+            os.utime(item, (10, 10))
+            self.assertEqual(first, candidate_hash(root))
+            item.write_text('second')
+            second = candidate_hash(root)
+            self.assertNotEqual(first, second)
+            renamed = root / 'renamed'
+            item.rename(renamed)
+            self.assertNotEqual(second, candidate_hash(root))
+            renamed.unlink()
+            item.write_text('')
+            file_hash = candidate_hash(root)
+            item.unlink()
+            item.mkdir()
+            self.assertNotEqual(file_hash, candidate_hash(root))
 
     def test_host_enumeration_expands_a_single_user_annotation(self):
         state = TaskState().data
@@ -279,8 +343,11 @@ class TransitionSelectionTests(unittest.TestCase):
         self.assertEqual(state.data["published_state_counts"], {})
 
     def episode(self, root):
-        episode = OpenHandsEpisode.__new__(OpenHandsEpisode)
+        episode = ProjectedEpisodeFixture.__new__(ProjectedEpisodeFixture)
+        episode.root = Path(root)
         episode.private = Path(root)
+        episode.lock = threading.RLock()
+        episode.config = {}
         episode.state = TaskState()
         episode.saved = {
             "control_results": {},
@@ -339,6 +406,46 @@ class TransitionSelectionTests(unittest.TestCase):
             self.assertIn("classification_warning", first)
             self.assertEqual(len(episode.state.data["transitions"]), 1)
             self.assertEqual(episode.guard.review.call_count, 1)
+
+    def test_rejected_send_corrects_under_same_permit_and_publishes_once(self):
+        with tempfile.TemporaryDirectory() as root:
+            episode = self.episode(root)
+            rng = ChoiceFixture(index=4)  # Initial OPERATE, regardless of annotation.
+            allowed = {'allowed': True, 'reasons': []}
+            episode.guard.review.side_effect = [allowed, {
+                'allowed': False,
+                'reasons': ['Request type/control does not match the proposed action.'],
+            }, allowed]
+            with patch('simulator.openhands.transition_selection.random.SystemRandom',
+                       return_value=rng):
+                selected = episode.control(dict(request_id='select', operation='transition',
+                    payload=dict(task_id='task-1', candidates=[self.candidate('BUILD')])))
+                draft = dict(task_id='task-1', permit_id=selected['permit_id'],
+                             text='解释一下这个问题为什么发生。')
+                denied = episode.control(dict(request_id='bad-send', operation='send', payload=draft))
+                self.assertFalse(denied['accepted'])
+                self.assertEqual(denied['active_request']['state'], 'OPERATE')
+                self.assertEqual(episode.saved['public'], [])
+                self.assertEqual(episode.state.data['published_state_counts'], {})
+                # Rehydrate persisted state and request cache without redrawing.
+                episode.state = TaskState(copy.deepcopy(episode.state.data))
+                episode.saved = copy.deepcopy(episode.saved)
+                again = episode.control(dict(request_id='select-again', operation='transition',
+                    payload=dict(task_id='task-1', candidates=[self.candidate('UNDERSTAND')])))
+                self.assertEqual(again, selected)
+                view = episode.control(dict(request_id='read', operation='read_state', payload={}))
+                self.assertEqual(view['state']['active_request'], denied['active_request'])
+                corrected = dict(request_id='correct-send', operation='send',
+                    payload={**draft, 'text': '帮我运行一下，看看实际输出。'})
+                sent = episode.control(corrected)
+                self.assertTrue(sent['accepted'])
+                self.assertEqual(episode.control(corrected), sent)
+            self.assertEqual(len(rng.calls), 1)
+            self.assertEqual(len(episode.saved['public']), 1)
+            self.assertEqual(episode.saved['public'][0]['text'], corrected['payload']['text'])
+            self.assertEqual(episode.state.data['published_state_counts'], {'OPERATE': 1})
+            self.assertEqual(len(episode.state.data['transitions']), 1)
+            self.assertEqual(episode.guard.review.call_count, 3)
 
     def test_rejected_payload_is_stable_but_changed_intent_gets_one_review(self):
         with tempfile.TemporaryDirectory() as root:

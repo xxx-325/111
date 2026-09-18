@@ -111,6 +111,64 @@ class GuardTests(unittest.TestCase):
         self.assertTrue(result["warnings"])
         self.assertIn("DEBUG may describe", result["reasons"][0])
 
+    def test_send_state_mismatch_rejects_with_private_actionable_reason(self):
+        relay = ReviewFixture()
+        relay.response = {
+            **relay.response,
+            "kind": "message",
+            "state_consistent": False,
+        }
+        permit = self.state.transition(
+            {
+                "task_id": "task-1",
+                "state": "BUILD",
+                "control": "CONTINUE",
+                "reason": "Ask Code to implement the requested change",
+            }
+        )
+        before = json.loads(json.dumps(self.state.data))
+        result = MessageGuard(relay, []).review(
+            "send",
+            {
+                "task_id": "task-1",
+                "permit_id": permit["id"],
+                "text": "请继续处理",
+            },
+            self.state,
+            {},
+            [],
+        )
+        self.assertFalse(result["allowed"])
+        self.assertIn(
+            "Request type/control does not match the proposed action.",
+            result["reasons"],
+        )
+        self.assertEqual(self.state.data, before)
+
+    def test_send_matching_state_remains_allowed(self):
+        relay = ReviewFixture()
+        relay.response = {**relay.response, "kind": "message"}
+        permit = self.state.transition(
+            {
+                "task_id": "task-1",
+                "state": "BUILD",
+                "control": "CONTINUE",
+                "reason": "Ask Code to implement the requested change",
+            }
+        )
+        result = MessageGuard(relay, []).review(
+            "send",
+            {
+                "task_id": "task-1",
+                "permit_id": permit["id"],
+                "text": "请继续处理",
+            },
+            self.state,
+            {},
+            [],
+        )
+        self.assertTrue(result["allowed"])
+
     def test_reject_decision_remains_authoritative_with_state_warning(self):
         relay = ReviewFixture()
         relay.response = {

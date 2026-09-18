@@ -4,14 +4,15 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
+from urllib.error import HTTPError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.error import HTTPError
 from urllib.request import Request, urlopen as stdlib_urlopen
 
 from simulator import native_http
 from simulator.openhands import control_tools
-from simulator.openhands.control_tools import HostExecutor, StateAction
+from simulator.openhands.control_tools import ControlRequestError, HostExecutor, StateAction
 from simulator.openhands.relay import Relay
 
 
@@ -33,6 +34,25 @@ class KeepaliveProvider(BaseHTTPRequestHandler):
 
 
 class NativeDeadlineTests(unittest.TestCase):
+    def test_control_error_body_is_bounded_structured_and_never_echoed(self):
+        for detail in ({'error_code': 'PROVIDER_REJECTED', 'request_id': 'a' * 32,
+                        'retryable': False, 'message': 'private provider text'},
+                       [], 'private detail'):
+            with self.subTest(detail=detail):
+                error = HTTPError('http://localhost/control', 502, 'private', {}, None)
+                raw = json.dumps({'error': detail}).encode()
+                with patch.object(error, 'read', return_value=raw) as read:
+                    with patch.object(control_tools, 'urlopen', side_effect=error):
+                        with self.assertRaises(ControlRequestError) as raised:
+                            control_tools.request_control('read_state', {})
+                read.assert_called_once_with(256 * 1024)
+                result = raised.exception
+                self.assertNotIn('private', str(result))
+                self.assertFalse(result.retryable)
+                self.assertEqual(result.error_code,
+                                 'PROVIDER_REJECTED' if isinstance(detail, dict) else 'CONTROL_HTTP_ERROR')
+                self.assertEqual(result.request_id, 'a' * 32 if isinstance(detail, dict) else None)
+
     def test_shared_deadline_returns_failure_and_forced_disconnect_marks_cancel(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -90,17 +110,20 @@ class NativeDeadlineTests(unittest.TestCase):
             control_tools.urlopen = redirect
             try:
                 started = time.monotonic()
-                with self.assertRaises(HTTPError):
+                with self.assertRaises(ControlRequestError) as raised:
                     HostExecutor("review")(StateAction())
+                self.assertEqual(raised.exception.error_code, "REQUEST_DEADLINE")
+                self.assertIsNotNone(raised.exception.request_id)
                 self.assertLess(time.monotonic() - started, 0.8)
                 responses = list(mailbox.glob("*.response"))
                 self.assertEqual(len(responses), 1)
                 response = json.loads(responses[0].read_text())
-                self.assertEqual(response["status"], 502)
+                self.assertEqual(response["status"], 504)
 
                 control_tools.urlopen = lambda request, timeout: redirect(request, 0.05)
-                with self.assertRaises(TimeoutError):
+                with self.assertRaises(ControlRequestError) as raised:
                     HostExecutor("review")(StateAction())
+                self.assertEqual(raised.exception.error_code, "CONTROL_UNAVAILABLE")
                 until = time.monotonic() + 1
                 while time.monotonic() < until and not list(mailbox.glob("*.cancel")):
                     time.sleep(0.01)

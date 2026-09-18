@@ -225,7 +225,8 @@ class RemoteTerminalExecutor(ToolExecutor):
                     command=a.command,
                     metadata=CmdOutputMetadata(exit_code=0),
                 )
-        if a.is_input:
+        # The SDK also uses empty input actions to poll pending command output.
+        if a.is_input and a.command:
             keys = {
                 "ENTER": "Enter",
                 "C-c": "C-c",

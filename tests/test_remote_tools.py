@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 try:
     import asyncssh
@@ -132,6 +133,7 @@ class RemoteToolTests(unittest.TestCase):
         class FakeSSH:
             def __init__(self):
                 self.status = False
+                self.exit_code = 0
                 self.sent = []
                 self.sftp = RemoteToolTests.MemorySFTP()
                 self.session = False
@@ -157,25 +159,62 @@ class RemoteToolTests(unittest.TestCase):
                     )
                     return Result(f"{len(log)}\n")
                 if cmd.startswith("cat "):
-                    return Result("0 0\n", 0) if self.status else Result("", 1)
+                    return Result(f"{self.exit_code} 0\n", 0) if self.status else Result("", 1)
                 return Result()
 
-        with tempfile.TemporaryDirectory() as d:
-            ssh = FakeSSH()
-            exe = RemoteTerminalExecutor(ssh, d, "session", {})
-            ssh.sftp.files[exe.log] = b"partial\n"
-            first = exe(TerminalAction(command="sleep 2", timeout=0))
-            self.assertTrue(first.timeout)
-            self.assertTrue(exe.state.exists())
-            before = sum("send-keys" in x and "sleep 2" in x for x in ssh.sent)
-            ssh.status = True
-            record = json.loads(exe.state.read_text())
-            ssh.sftp.files[exe.log] += ("\n" + record["marker"] + "0__\n").encode()
-            second = exe(TerminalAction(command="", timeout=1))
-            after = sum("send-keys" in x and "sleep 2" in x for x in ssh.sent)
-            self.assertEqual(before, after)
-            self.assertEqual(second.metadata.exit_code, 0)
-            self.assertFalse(exe.state.exists())
+        for is_input in (False, True):
+            for exit_code in (0, 7):
+                with self.subTest(is_input=is_input, exit_code=exit_code), tempfile.TemporaryDirectory() as d:
+                    ssh = FakeSSH()
+                    ssh.exit_code = exit_code
+                    exe = RemoteTerminalExecutor(ssh, d, "session", {})
+                    ssh.sftp.files[exe.log] = b"old output\n"
+                    first = exe(TerminalAction(command="sleep 2", timeout=0))
+                    self.assertTrue(first.timeout)
+                    self.assertTrue(exe.state.exists())
+                    sent = [cmd for cmd in ssh.sent if "send-keys" in cmd]
+                    scripts = {path: data for path, data in ssh.sftp.files.items() if path.endswith('.sh')}
+                    self.assertEqual(list(scripts.values()), [b"sleep 2"])
+
+                    # Restore the same pending command, then read only new bytes.
+                    exe = RemoteTerminalExecutor(ssh, d, "session", {})
+                    chunks = []
+                    for chunk in (b"first\n", b"second\n"):
+                        ssh.sftp.files[exe.log] += chunk
+                        pending = exe(TerminalAction(command="", is_input=is_input, timeout=0))
+                        self.assertTrue(pending.timeout)
+                        self.assertEqual(pending.metadata.exit_code, -1)
+                        chunks.append(pending.text)
+                    self.assertEqual(chunks, ["first", "\nsecond"])
+
+                    ssh.status = True
+                    record = json.loads(exe.state.read_text())
+                    ssh.sftp.files[exe.log] += ("last\n" + record["marker"] + f"{exit_code}__\n").encode()
+                    finished = exe(TerminalAction(command="", is_input=is_input, timeout=1))
+                    self.assertEqual("".join(chunks) + finished.text, "first\nsecond\nlast")
+                    self.assertEqual(finished.metadata.exit_code, exit_code)
+                    self.assertFalse(finished.timeout)
+                    self.assertFalse(exe.state.exists())
+
+                    idle = exe(TerminalAction(command="", is_input=is_input))
+                    self.assertTrue(idle.is_error)
+                    self.assertIn("No running command", idle.text)
+                    self.assertEqual([cmd for cmd in ssh.sent if "send-keys" in cmd], sent)
+                    self.assertEqual({path: data for path, data in ssh.sftp.files.items() if path.endswith('.sh')}, scripts)
+
+    def test_nonempty_input_still_sends_keys_without_polling(self):
+        for command, suffix in (("C-c", "C-c"), ("ENTER", "Enter"),
+                                ("hello", "-l hello"), (" ", "-l ' '")):
+            with self.subTest(command=command):
+                exe = RemoteTerminalExecutor.__new__(RemoteTerminalExecutor)
+                exe.session = "session"
+                exe.ssh = Mock()
+                exe.ssh.run.return_value = type("Result", (), {"stderr": "", "exit_status": 0})()
+                exe.poll = Mock()
+                result = exe(TerminalAction(command=command, is_input=True))
+                exe.ssh.run.assert_called_once_with(f"tmux send-keys -t session {suffix}")
+                exe.poll.assert_not_called()
+                self.assertFalse(result.is_error)
 
     def test_reset_with_command_recreates_then_executes(self):
         class Result:

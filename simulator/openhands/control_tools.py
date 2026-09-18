@@ -2,6 +2,7 @@
 
 import json
 from typing import Literal
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,6 +13,17 @@ from ..state_machine import CONTROL_GUIDANCE, STATE_GUIDANCE
 
 CONTROL_DEADLINE_SECONDS = 175
 CONTROL_RESPONSE_GRACE_SECONDS = 2
+
+
+class ControlRequestError(RuntimeError):
+    """A safe, structured error returned by the host control bridge."""
+
+    def __init__(self, message, *, status=None, error_code="CONTROL_UNAVAILABLE", request_id=None, retryable=False):
+        super().__init__(message)
+        self.status = status
+        self.error_code = error_code
+        self.request_id = request_id
+        self.retryable = retryable
 
 
 def request_control(operation, payload, *, top_level=False):
@@ -29,10 +41,39 @@ def request_control(operation, payload, *, top_level=False):
             "X-Request-Timeout": str(CONTROL_DEADLINE_SECONDS),
         },
     )
-    with urlopen(
-        request, timeout=CONTROL_DEADLINE_SECONDS + CONTROL_RESPONSE_GRACE_SECONDS
-    ) as response:
-        return json.load(response)
+    try:
+        with urlopen(
+            request, timeout=CONTROL_DEADLINE_SECONDS + CONTROL_RESPONSE_GRACE_SECONDS
+        ) as response:
+            raw = response.read(256 * 1024)
+            return json.loads(raw)
+    except HTTPError as error:
+        try:
+            raw = error.read(256 * 1024)
+            value = json.loads(raw)
+            detail = value.get("error", {}) if isinstance(value, dict) else {}
+            if not isinstance(detail, dict):
+                detail = {}
+        except Exception:
+            detail = {}
+        safe_code = detail.get("error_code", "CONTROL_HTTP_ERROR")
+        if not isinstance(safe_code, str) or len(safe_code) > 64:
+            safe_code = "CONTROL_HTTP_ERROR"
+        request_id = detail.get("request_id")
+        if not isinstance(request_id, str) or len(request_id) > 128:
+            request_id = None
+        raise ControlRequestError(
+            "Control bridge request failed",
+            status=error.code,
+            error_code=safe_code,
+            request_id=request_id,
+            retryable=detail.get("retryable") is True,
+        ) from None
+    except (URLError, TimeoutError, json.JSONDecodeError) as error:
+        raise ControlRequestError(
+            "Control bridge is unavailable",
+            error_code="CONTROL_UNAVAILABLE",
+        ) from error
 
 
 class StateAction(Action):
@@ -172,7 +213,7 @@ class RequestTransitionTool(ToolDefinition):
             cls,
             TransitionAction,
             "transition",
-            "Annotate one to seven genuinely reasonable request types with short reasons. The host independently enumerates feasible state/control candidates and chooses one, then returns its state, control, reason and send permit.",
+            "Annotate reasonable request types. The host chooses and returns the state, control and permit for this turn. Compose your message for that selected intent; requesting again does not change it.",
         )
 
 
@@ -183,7 +224,7 @@ class SendReplyTool(ToolDefinition):
             cls,
             SendAction,
             "send",
-            "Send your own message to Code. Use [[运行结果]] only when task_result.observation.raw_result_available is true; otherwise directly relay its summary.",
+            "Send your own message matching the permit's selected state/control. If rejected, correct the message under the same permit. Use [[运行结果]] only when task_result.observation.raw_result_available is true; otherwise relay its summary.",
         )
 
 

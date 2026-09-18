@@ -113,6 +113,19 @@ class FeedbackProjectionTests(unittest.TestCase):
         self.assertEqual(project_latest_feedback(self.observation('ordinary output'), 'still wrong'), {
             'kind': 'logic_error', 'evidence_id': 'obs1', 'summary': 'still wrong'})
 
+    def test_complete_run_survives_later_ordinary_terminal_output(self):
+        complete = self.observation(
+            '---INPUT---\nvalue=custom\n---END INPUT---\n'
+            '---RESULT---\nactual output\n---END RESULT---'
+        )[0]
+        ordinary = self.observation('git diff --stat\nworker finished')[0]
+        ordinary['id'] = 'obs2'
+        result = project_latest_feedback([complete, ordinary], '仍然不对')
+        self.assertEqual(result['evidence_id'], 'obs1')
+        self.assertEqual(result['input'], 'value=custom')
+        self.assertEqual(result['output'], 'actual output')
+        self.assertEqual(result['summary'], '仍然不对')
+
     def test_closed_execution_block_availability_is_content_free(self):
         self.assertFalse(has_projectable_execution_blocks(
             self.observation('ordinary output')))

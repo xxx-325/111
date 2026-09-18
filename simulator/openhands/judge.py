@@ -233,13 +233,19 @@ def bind_submission(submitted, job, observations, *, project_feedback=True):
 
 
 def candidate_hash(root):
-    """Hash regular candidate content, including paths; reject escaping links."""
-    result = hashlib.sha256()
+    """Hash candidate content and behavior-relevant file metadata."""
+    root = Path(root)
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError('candidate root must be an existing directory')
+    result = hashlib.sha256(b'candidate-tree-v2\0')
     for path in sorted(Path(root).rglob('*')):
         if path.is_symlink() or not (path.is_file() or path.is_dir()):
             raise ValueError('unsafe candidate entry')
+        relative = str(path.relative_to(root)).encode()
+        mode = path.stat().st_mode & 0o7777
+        result.update(relative + b'\0' + (b'd' if path.is_dir() else b'f'))
+        result.update(f'\0{mode:o}\0'.encode())
         if path.is_file():
-            result.update(str(path.relative_to(root)).encode() + b'\0')
             result.update(hashlib.sha256(path.read_bytes()).digest())
     return result.hexdigest()
 

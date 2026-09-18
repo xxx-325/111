@@ -409,6 +409,17 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
             and current_code_reply_id == pending.get("origin_code_reply_id")
         ):
             return False
+        # A prior carry authorizes the conversational revision without changing
+        # the original Judge evidence or inventing a new check.
+        carried_source = any(
+            record.get("schema") == SOLVED_VERDICT_CARRY_SCHEMA
+            and record.get("task_id") == pending.get("task_id")
+            and record.get("source_evidence_id") == pending.get("source_evidence_id")
+            and record.get("candidate_version") == candidate_version
+            and record.get("current_revision") == pending.get("origin_revision")
+            and record.get("state") in CARRYABLE_POST_SOLVED_STATES
+            for record in current.get("verdict_carries", [])
+        )
         source_is_current = (
             pending.get("schema") == POST_SOLVED_FOLLOWUP_SCHEMA
             and pending.get("task_id") == self.state.data["task_id"]
@@ -428,7 +439,8 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
             and current.get("applied_job") == pending.get("source_evidence_id")
             and isinstance(source_evidence, dict)
             and source_evidence.get("tool") == "judge_summary"
-            and source_evidence.get("revision") == pending.get("origin_revision")
+            and (source_evidence.get("revision") == pending.get("origin_revision")
+                 or carried_source)
             and source_evidence.get("result") == "passed"
             and (source_evidence.get("summary") or {}).get("outcome") == "solved"
             and current.get("verdict") == source

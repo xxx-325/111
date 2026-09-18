@@ -20,6 +20,8 @@ SYSTEM = (
     "state_consistent 只诊断请求类型／推进动作的分类是否贴切；"
     "如果唯一问题是 BUILD、DEBUG 等合法标签的分类差异，decision 必须为 allow，并将 "
     "state_consistent 设为 false。不要把标签分类差异写成安全拒绝。"
+    "宿主对 send 且 state_consistent=false 会阻止公开发送并保留 permit 和私有草稿；"
+    "transition 的同类差异只保留私有 warning。"
     "任务范围内前瞻性编码策略或实现约束可作为 PLAN，不需要运行证据；"
     "补充 Code 已公开方案用 REFINE，明确纠偏用 CORRECT，只有明确要求改实现才是 BUILD。"
     "不得借策略反馈新增业务功能、虚构现状，或无依据扩成新文档/测试任务；"
@@ -199,6 +201,10 @@ class MessageGuard:
             warnings.append(
                 "Request type/control classification may not match the proposed action."
             )
+            if operation == "send":
+                errors.append(
+                    "Request type/control does not match the proposed action."
+                )
         if operation == "send":
             if result["claims_observation"] and not identifiers:
                 errors.append(
