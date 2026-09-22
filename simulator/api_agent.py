@@ -21,7 +21,11 @@ class API:
         if tools:
             payload['tools'] = TOOLS
         req = Request(self.config['base_url'].rstrip('/') + '/chat/completions',
-                      data=json.dumps(payload).encode(), headers={'Authorization': 'Bearer ' + self.key, 'Content-Type': 'application/json'})
+                      data=json.dumps(payload).encode(), headers={
+                          'Authorization': 'Bearer ' + self.key,
+                          'Content-Type': 'application/json',
+                          'User-Agent': 'curl/8.0',
+                      })
         try:
             timeout = self.config.get('timeout', 180)
             if self.deadline is not None:

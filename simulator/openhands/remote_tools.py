@@ -15,6 +15,24 @@ from openhands.tools.file_editor.definition import (
 from .remote_safety import StopOnUncertainExecution
 
 
+_PREPARED_ENV_COMMAND = re.compile(
+    r"(?:python(?:\d+(?:\.\d+)?)?\s+-m\s+pip|pip(?:\d+(?:\.\d+)?)?|"
+    r"uv\s+pip|poetry|npm|yarn|pnpm|conda|mamba|apt(?:-get)?|apk)\s+"
+    r"(?:install|download|index|add|update|upgrade|sync|fetch)\b",
+    re.IGNORECASE,
+)
+
+
+def is_prepared_environment_command(command):
+    """Return whether a command tries to change or query package indexes.
+
+    Execution images are built with their dependencies and have no package
+    network. Treating these commands as successful no-ops avoids a predictable
+    failed command/retry loop while leaving ordinary shell commands untouched.
+    """
+    return bool(_PREPARED_ENV_COMMAND.search(command or ""))
+
+
 class SSH:
     def __init__(self, host, port, key, known):
         self.loop = asyncio.new_event_loop()
@@ -263,6 +281,16 @@ class RemoteTerminalExecutor(ToolExecutor):
                 command=a.command,
                 is_error=r.exit_status != 0,
                 metadata=CmdOutputMetadata(exit_code=-1),
+            )
+        if a.command and not a.is_input and is_prepared_environment_command(a.command):
+            return TerminalObservation.from_text(
+                text=(
+                    "Package installation/download was not run: this sandbox "
+                    "image already contains its dependencies. Continue with the "
+                    "existing environment."
+                ),
+                command=a.command,
+                metadata=CmdOutputMetadata(exit_code=0),
             )
         if self.state.exists():
             rec = json.loads(self.state.read_text())

@@ -189,9 +189,15 @@ class OpenHandsEpisode(UserFinalFallbackMixin):
                     not result.exists()
                     or json.loads(result.read_text()).get("status") == "error"
                 ):
-                    raise RuntimeError(
-                        "uncertain interrupted SDK call; inspect retained container, do not auto-replay"
-                    )
+                    # One narrow, evidence-checked exception: a Code turn cut short
+                    # by a provider 503 or discarded truncation. The failed turn stays on disk,
+                    # a source-linked successor command id is used, and the worker
+                    # continues the persisted conversation without resending the
+                    # user message or replaying any completed tool call.
+                    if not self.authorized_provider_503_recovery(role, identifier):
+                        raise RuntimeError(
+                            "uncertain interrupted SDK call; inspect retained container, do not auto-replay"
+                        )
         else:
             self.root.mkdir(parents=True, exist_ok=False, mode=0o700)
             self.private.mkdir(mode=0o700)
@@ -234,6 +240,23 @@ class OpenHandsEpisode(UserFinalFallbackMixin):
         self.saved["image_id"] = self.image
         self.guard = None
         self.persist()
+
+    def authorized_provider_503_recovery(self, role, identifier):
+        """Whether an explicit, evidence-checked provider continuation owns this turn.
+
+        Only the dedicated continuation entry writes ``provider_503_continuation``,
+        and only after verifying a 503 or unforwarded output truncation, that
+        every tool call is already paired, that no fatal marker exists, and that a
+        source-linked successor command id was prepared. Everything else keeps the
+        default refusal so an uncertain interrupted call is never silently replayed.
+        """
+        authorization = self.saved.get("provider_503_continuation") or {}
+        return (
+            authorization.get("authorized") is True
+            and authorization.get("role") == role
+            and authorization.get("resumed_command_id") == identifier
+            and authorization.get("retained_failed_command_id") != identifier
+        )
 
     def prepare_tasks(self, config):
         return prepare(config, self.private)
@@ -347,11 +370,17 @@ class OpenHandsEpisode(UserFinalFallbackMixin):
             "stage": context["stage"],
             "last_code_reply": context["last_code_reply"],
         }
+        new_task = (
+            context["stage"] == "initial_delegation"
+            and self.state.data.get("task_index", 0) > 0
+        )
         return dict(
             communication=communication,
             current_requirement=self.user_requirement(),
             instruction=(
-                self.initial_instruction()
+                self.new_task_instruction()
+                if new_task
+                else self.initial_instruction()
                 if context["stage"] == "initial_delegation"
                 else (
                     "自然回应 Code 的上一条消息。若要引用 task_result 的运行结果，在正文相应位置写 "
@@ -362,6 +391,9 @@ class OpenHandsEpisode(UserFinalFallbackMixin):
 
     def initial_instruction(self):
         return "直接说出当前问题，让 Code 看一下。"
+
+    def new_task_instruction(self):
+        return "直接提出当前需求，无需为上一项任务另作收尾。"
 
     def user_requirement(self):
         """Remove only a host-generated commit title from User task material."""
@@ -709,7 +741,7 @@ class OpenHandsEpisode(UserFinalFallbackMixin):
                             "decision": decision,
                             "next_requirement": self.user_requirement(),
                             "state": self.state.view(),
-                            "instruction": "You may combine a short acknowledgement with the newly released request.",
+                            "instruction": self.new_task_instruction(),
                         }
                     else:
                         self.saved["closing"] = True

@@ -26,7 +26,7 @@ def policy_record(language, variant='neutral', code_prompt_mode='local'):
     return dict(version='delegating-v25-cross-task-final-evidence', dialogue_language=language, delegation_variant=variant,
                 local_adaptation='User has dialogue controls only; Code and Judge retain SDK development tools.',
                 implementation_sha256={name: hashlib.sha256((Path(__file__).parent/name).read_bytes()).hexdigest()
-                    for name in ('tool_wording.py', 'episode.py', 'events.py', 'user_final_fallback.py', 'container.py', 'transition_selection.py', 'state.py', 'provenance.py', 'guard.py', 'evidence_links.py','permissions.py','worker.py','user_projection.py','simulated_experience.py','feedback_projection.py', 'sandbox.py', 'remote_tools.py', 'remote_safety.py', 'relay.py', 'control_tools.py', '../episode.py', '../state_machine.py', '../native_http.py')},
+                    for name in ('tool_wording.py', 'episode.py', 'events.py', 'user_final_fallback.py', 'container.py', 'transition_selection.py', 'state.py', 'provenance.py', 'guard.py', 'evidence_links.py','permissions.py','worker.py','user_projection.py','simulated_experience.py','feedback_projection.py', 'sandbox.py', 'snapshot_volume.py', 'remote_tools.py', 'remote_safety.py', 'relay.py', 'control_tools.py', 'config.py', 'source.py', 'issue_stages.py', '../episode.py', '../state_machine.py', '../native_http.py')},
                 upstream=json.loads(PROMPTS.read_text()),
                 code_prompt_mode=code_prompt_mode,
                 prompt_sha256={role: hashlib.sha256(text.encode()).hexdigest() if text is not None else None for role, text in prompts.items()})

@@ -9,7 +9,8 @@ from pathlib import Path, PurePosixPath
 
 from ..episode import save
 from .relay import Relay
-from .sandbox import ExecutionSandbox, inspect_container
+from .config import model_request_limits
+from .sandbox import ExecutionSandbox, inspect_container, bind_source
 
 
 def candidate_pythonpath(value):
@@ -43,7 +44,7 @@ class SDKContainer:
             (self.directory / name).mkdir(parents=True, exist_ok=True)
         runtime = self.directory / 'runtime/simulator'
         # Mount only runtime implementation, never the project or research corpus.
-        for name in ('__init__.py', 'worker.py', 'control_tools.py', 'tool_wording.py', 'judge_tools.py'):
+        for name in ('__init__.py', 'worker.py', 'control_tools.py', 'tool_wording.py', 'judge_tools.py', 'config.py'):
             shutil.copy2(Path(__file__).parent / name, runtime / 'openhands' / name)
         if self.backend == 'ssh_sandbox':
             for name in ('remote_tools.py','remote_safety.py'):
@@ -52,15 +53,18 @@ class SDKContainer:
         shutil.copy2(Path(__file__).parents[1] / 'state_machine.py', runtime / 'state_machine.py')
         shutil.copy2(Path(__file__).parents[1] / 'native_http.py', runtime / 'native_http.py')
         requested_pythonpath = candidate_pythonpath(config.get('candidate_pythonpath'))
+        limits = model_request_limits(config)
         cfg_path = self.directory / 'inbox/config.json'
         if not cfg_path.exists():
             save(cfg_path, dict(model=config['model'], role=role, system=system, control=bool(control),
                                 browser=browser, condenser_max_size=condenser_max_size, neutral_tools=neutral_tools,
                                 conversation_id=str(uuid.uuid4()), temperature=config.get('temperature', .3),
                                 candidate_pythonpath=requested_pythonpath, execution_backend=self.backend,
-                                execution_image=config.get('execution_image')))
+                                execution_image=config.get('execution_image'), **limits))
         self.relay = Relay(config, self.directory / 'mailbox', self.directory / 'provider.jsonl', control, deadline, budget, role)
         cfg = json.loads(cfg_path.read_text())
+        if model_request_limits(cfg) != limits:
+            raise ValueError('model request limits differ from persisted SDK configuration')
         persisted_pythonpath = candidate_pythonpath(cfg.get('candidate_pythonpath'))
         if persisted_pythonpath != requested_pythonpath:
             raise ValueError('candidate_pythonpath differs from the persisted SDK container configuration')
@@ -128,7 +132,7 @@ class SDKContainer:
             expected_mounts = {(str(p), t, not r) for p, t, r in control_mounts}
             host = details['HostConfig']
             if self.backend == 'ssh_sandbox' and (
-                    {(m['Source'],m['Destination'],m['RW']) for m in details['Mounts']} != expected_mounts or
+                    {(bind_source(m),m['Destination'],m['RW']) for m in details['Mounts']} != expected_mounts or
                     host.get('NetworkMode') != (self.sandbox.network if self.sandbox else 'none') or
                     host.get('Privileged') or host.get('PidMode') or host.get('CapAdd') or
                     set(host.get('CapDrop') or []) != {'ALL'} or

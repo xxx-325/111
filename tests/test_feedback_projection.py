@@ -6,6 +6,7 @@ from simulator.openhands.feedback_projection import (
     feedback_failure_key,
     feedback_units,
     feedback_projection_mapping,
+    has_public_feedback_source,
     has_projectable_execution_blocks,
     labeled_blocks,
     project_latest_feedback,
@@ -148,6 +149,12 @@ class FeedbackProjectionTests(unittest.TestCase):
                 'command':'cd /workspace/candidate && python check.py','exit_code':-1,'timeout':True}}
         self.assertEqual(project_latest_feedback([candidate, reference, timed_out])['output'], 'EQUAL: False')
 
+    def test_public_feedback_source_excludes_reference_only_observations(self):
+        reference = self.observation('comparison output')[0]
+        reference['observation']['command'] = 'cd /reference/fixed && check'
+        self.assertFalse(has_public_feedback_source([reference]))
+        self.assertTrue(has_public_feedback_source(self.observation('candidate output')))
+
     def test_unclosed_and_ambiguous_blocks_fail_closed(self):
         proposal = {'evidence_id': 'obs1'}
         for text in (
@@ -226,6 +233,7 @@ class FeedbackProjectionTests(unittest.TestCase):
         self.assertEqual(units[1]['observation'], {
             'kind': 'wrong_output', 'input': 'prefix@example.com',
             'output': 'original',
+            'evidence_basis': 'execution',
             'summary': '传入 prefix@example.com 后实际仍是 original',
         })
         self.assertEqual(feedback_failure_key(feedback),
@@ -240,8 +248,16 @@ class FeedbackProjectionTests(unittest.TestCase):
         unit = feedback_units(feedback)[1]
         self.assertEqual(unit['observation'], {
             'kind': 'runtime_error', 'input': 'run --name=custom',
-            'error': 'ValueError: bad input',
+            'error': 'ValueError: bad input', 'evidence_basis': 'execution',
         })
+
+    def test_logic_feedback_keeps_static_evidence_basis_private(self):
+        units = feedback_units({
+            'kind': 'logic_error', 'evidence_id': 'obs1',
+            'symptom': '跨月结果还是不对',
+        })
+        self.assertEqual(units[0]['observation']['evidence_basis'],
+                         'static_observation')
 
     def test_private_test_selector_cannot_become_public_symptom(self):
         with self.assertRaisesRegex(PublicFeedbackError, 'private test path'):

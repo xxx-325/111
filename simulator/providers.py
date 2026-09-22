@@ -29,7 +29,11 @@ class OpenAICompatibleProvider:
         req = request.Request(
             f"{self.base_url}/chat/completions",
             data=payload,
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "curl/8.0",
+            },
         )
         with request.urlopen(req, timeout=180) as response:
             data = json.loads(response.read())

@@ -8,7 +8,8 @@ from simulator.openhands.budget import Budget
 
 def config():
     price = dict(model='m', input_per_million=1, output_per_million=1)
-    return dict(max_cost=.1, user={'model': 'm'}, code={'model': 'm'}, pricing={
+    return dict(max_cost=.1, context_window_tokens=65536,
+                user={'model': 'm'}, code={'model': 'm'}, pricing={
         'source': 'test fixture', 'currency': 'USD', 'user': price, 'code': price})
 
 

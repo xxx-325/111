@@ -11,18 +11,40 @@ try:
         remote_tool_specs,
         RemoteTerminalExecutor,
         RemoteFileEditorExecutor,
+        is_prepared_environment_command,
     )
     from openhands.tools.terminal.definition import TerminalAction
     from openhands.tools.file_editor.definition import FileEditorAction
 except ImportError:
     remote_tool_specs = RemoteTerminalExecutor = RemoteFileEditorExecutor = None
     TerminalAction = FileEditorAction = None
+    is_prepared_environment_command = None
 
 
 @unittest.skipIf(
     remote_tool_specs is None, "AsyncSSH is installed in the control image"
 )
 class RemoteToolTests(unittest.TestCase):
+    def test_prepared_environment_commands_are_detected_without_blocking_shell(self):
+        for command in (
+            "pip install -e .",
+            "cd /tmp && pip download click --no-deps",
+            "cd /tmp && timeout 20 pip download click --no-deps",
+            "python -m pip index versions click",
+            "uv pip sync requirements.txt",
+            "npm install",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(is_prepared_environment_command(command))
+        for command in (
+            "python -m pytest tests -q",
+            "python -c 'import click'",
+            "git diff --check",
+            "pip --version",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(is_prepared_environment_command(command))
+
     class MemoryFile:
         def __init__(self, files, path, mode):
             self.files, self.path, self.mode = files, path, mode

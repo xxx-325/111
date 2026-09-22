@@ -45,6 +45,14 @@ When freezing Code for a snapshot, freeze its execution container too: stopping
 the control process alone does not stop background candidate mutations.
 Candidate and reference mounts for Judge remain read-only.
 
+Judge reads Docker-managed snapshot volumes, not host bind-mounted candidate
+files. Snapshot replacement freezes Judge's execution container. Before a fresh
+review, the host compares the Code candidate, the host-side Judge copy, and the
+candidate read inside Judge's container as its execution user. A mismatch stops
+the review. Upload failure leaves the reader frozen rather than assessing a
+partial snapshot. Checkpoints from the older bind-mount backend are not silently
+migrated.
+
 Restore must verify the recorded image, mounts, role, execution identity, and
 delivery position. Uncertain commands must not be submitted again. Older
 shared-container checkpoints are retained, not silently upgraded.

@@ -44,7 +44,10 @@ def task_feedback(current):
     feedback = current.get('feedback') or {}
     outcome = feedback.get('outcome')
     if outcome == 'solved':
-        return dict(status='solved')
+        result = dict(status='solved')
+        if (current.get('verdict') or {}).get('verification_mode') == 'static_reference':
+            result['verification'] = 'static'
+        return result
     result = dict(status='pending')
     if outcome in ('unsolved', 'uncertain'):
         # Only the current host-selected observation is public.  Keep an
@@ -114,6 +117,8 @@ def control_result(operation, result, state, current):
     public = {k: copy.deepcopy(result[k]) for k in (
         'accepted', 'handoff', 'paused', 'ended', 'retained_private', 'permit_id', 'next_requirement',
         'current_requirement') if k in result}
+    if operation == 'accept' and result.get('next_requirement') and result.get('instruction'):
+        public['instruction'] = result['instruction']
     # A transition returns the permit directly, rather than under permit_id.
     if operation == 'transition' and result.get('accepted'):
         for key in ('id', 'task_id', 'state', 'control', 'reason'):

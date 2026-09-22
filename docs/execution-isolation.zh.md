@@ -27,6 +27,11 @@ OpenHands 继续拥有 agent loop 和上下文压缩。持久远程 shell 保留
 
 冻结 Code 的 snapshot 时，也要冻结其执行容器：只停止控制进程并不能阻止后台 candidate 变更。Judge 的 candidate 与 reference 挂载保持只读。
 
+Judge 从 Docker 管理的快照卷读取，而不是直接读取宿主 candidate 的 bind mount。
+替换快照时冻结 Judge 执行容器；每次新评审前，核对 Code 候选、宿主 Judge
+副本和以 Judge 执行用户在容器内读取的候选指纹。不一致则停止评审。上传失败时
+保持读取方冻结，不评审部分更新的快照。旧 bind-mount 后端的 checkpoint 不静默迁移。
+
 恢复必须核对记录的镜像、挂载、角色、执行身份和交付位置。不确定的命令不得再次提交。较早的共享容器 checkpoint 保留，不静默升级。
 
 ## 模型运行前所需证据

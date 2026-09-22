@@ -134,10 +134,16 @@ class TaskState:
             raise TransitionError('unresolved blocker; pause instead')
         selected = self.evidence(payload.get('evidence_ids', []))
         independently_observed = [c for c in self.data['checks'] if c.get('tool') != 'code_report']
+        selected_verification = (
+            'executed' if any(c['result'] == 'passed' for c in selected)
+            else 'static' if any(c['result'] == 'static_solved' for c in selected)
+            else 'none'
+        )
         result = dict(task_id=self.data['task_id'], reason=payload['reason'],
                       basis=('assistant_report' if all(c.get('tool') == 'code_report' for c in selected) else 'observations') if selected else ('user_acceptance_with_unlinked_observations' if independently_observed else 'user_acceptance_without_independent_check'),
                       evidence_ids=payload.get('evidence_ids', []),
-                      checks_passed=any(c['result'] == 'passed' for c in selected))
+                      checks_passed=selected_verification == 'executed',
+                      verification=selected_verification)
         self.data['accepted'].append(result)
         self.data.update(phase='accepted', permit=None)
         return result

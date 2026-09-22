@@ -20,6 +20,24 @@ def subprocess_result(returncode, stderr=''):
 
 
 class SandboxLifecycleTests(unittest.TestCase):
+    def test_container_hash_uses_shared_algorithm_and_non_root_execution(self):
+        from simulator.openhands.judge import candidate_hash
+        from unittest.mock import MagicMock
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            (path / 'example.py').write_text('assert True\n')
+            sandbox = ExecutionSandbox.__new__(ExecutionSandbox)
+            sandbox.name = 'isolated-judge'
+            sandbox.verify = MagicMock()
+            import subprocess
+            run = subprocess.run
+            def execute(command, **kwargs):
+                self.assertEqual(command[:6], ['docker', 'exec', '--user', '1000', 'isolated-judge', 'python'])
+                import sys
+                return run([sys.executable, '-c', command[-1].replace('"/workspace/candidate"', repr(root))], **kwargs)
+            with patch('simulator.openhands.sandbox.subprocess.run', side_effect=execute):
+                self.assertEqual(sandbox.candidate_hash(), candidate_hash(path))
+
     def test_mutable_image_is_not_allowed(self):
         with self.assertRaises(ValueError):
             pinned_image('project:latest')

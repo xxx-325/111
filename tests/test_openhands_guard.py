@@ -111,7 +111,7 @@ class GuardTests(unittest.TestCase):
         self.assertTrue(result["warnings"])
         self.assertIn("DEBUG may describe", result["reasons"][0])
 
-    def test_send_state_mismatch_rejects_with_private_actionable_reason(self):
+    def test_send_state_mismatch_is_a_warning_when_content_is_safe(self):
         relay = ReviewFixture()
         relay.response = {
             **relay.response,
@@ -138,10 +138,10 @@ class GuardTests(unittest.TestCase):
             {},
             [],
         )
-        self.assertFalse(result["allowed"])
+        self.assertTrue(result["allowed"])
         self.assertIn(
-            "Request type/control does not match the proposed action.",
-            result["reasons"],
+            "Request type/control classification may not match the proposed action.",
+            result["warnings"],
         )
         self.assertEqual(self.state.data, before)
 

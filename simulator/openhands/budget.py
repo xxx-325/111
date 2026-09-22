@@ -11,6 +11,9 @@ from pathlib import Path
 
 class Budget:
     def __init__(self, config, data=None, journal=None):
+        self.configured_input_tokens = config.get('context_window_tokens', 262144)
+        if type(self.configured_input_tokens) is not int or self.configured_input_tokens <= 0:
+            raise ValueError('context_window_tokens must be a positive integer')
         self.maximum = config.get('max_cost')
         self.prices = config.get('pricing')
         if self.maximum is not None:
@@ -59,8 +62,10 @@ class Budget:
                 if self.data['usage_missing']:
                     raise RuntimeError('provider usage missing; cost-limited run paused')
                 price = self.prices[role]
-                # Hold the context-bound reservation across concurrent provider calls.
-                reserve = (65536*price['input_per_million'] + body.get('max_tokens', 4096)*price['output_per_million'])/1e6
+                # Hold the configured context reservation across concurrent calls.
+                input_tokens = self.configured_input_tokens
+                output_tokens = body.get('max_tokens', 0)
+                reserve = (input_tokens*price['input_per_million'] + output_tokens*price['output_per_million'])/1e6
                 if self.data['cost'] + sum(self.data['pending'].values()) + reserve > self.maximum:
                     raise TimeoutError('insufficient remaining cost budget for conservative call reservation')
             identifier = call_id or uuid.uuid4().hex

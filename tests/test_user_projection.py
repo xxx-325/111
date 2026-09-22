@@ -30,6 +30,22 @@ class UserProjectionTests(unittest.TestCase):
             self.assertNotIn('2012-12-25',json.dumps(projected))
         self.assertIn('real error',json.dumps(state_view(self.state,self.current)))
 
+    def test_static_solved_feedback_identifies_verification_basis(self):
+        current = dict(feedback=dict(outcome='solved'),
+                       verdict=dict(verification_mode='static_reference'))
+        self.assertEqual(task_feedback(current),
+                         {'status': 'solved', 'verification': 'static'})
+
+    def test_accept_projection_keeps_only_next_task_instruction(self):
+        result = control_result('accept', {
+            'accepted': True,
+            'next_requirement': {'title': 'Next issue'},
+            'instruction': 'Handle the next released requirement.',
+            'private_plan': 'do not expose',
+        }, self.state, self.current)
+        self.assertEqual(result['instruction'], 'Handle the next released requirement.')
+        self.assertNotIn('private_plan', result)
+
     def test_unsolved_feedback_preserved_and_no_acceptance(self):
         for outcome in ('unsolved','uncertain'):
             result=task_feedback(dict(feedback=dict(outcome=outcome,observation={

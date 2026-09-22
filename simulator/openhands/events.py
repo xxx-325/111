@@ -32,8 +32,10 @@ def latest_user_final(events):
     """Return the last non-empty ordinary User-agent final from one SDK turn."""
     for event in reversed(events or ()):
         item = public_event(event)
-        if (item and event.get('kind') == 'MessageEvent'
-                and item.get('phase') == 'final' and item.get('text', '').strip()):
+        # OpenHands may finish through either a MessageEvent or the public
+        # ``finish`` action. Both contain the same User draft and must be
+        # recoverable when no control action was delivered afterward.
+        if item and item.get('phase') == 'final' and item.get('text', '').strip():
             return {'event_id': event['id'], 'text': item['text']}
     return None
 

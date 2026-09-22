@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 from simulator.openhands.state import TaskState, TransitionError
-from simulator.openhands.events import public_event, private_observation
+from simulator.openhands.events import public_event, private_observation, latest_user_final
 from simulator.openhands.budget import Budget
 
 
@@ -47,7 +47,17 @@ class StateTests(unittest.TestCase):
         state = TaskState()
         result = state.accept(dict(task_id='task-1', reason='Trust the report'))
         self.assertFalse(result['checks_passed'])
+        self.assertEqual(result['verification'], 'none')
         self.assertEqual(result['basis'], 'user_acceptance_without_independent_check')
+
+    def test_static_reference_acceptance_is_not_executed_pass(self):
+        state = TaskState()
+        state.data['checks'] = [dict(id='judge-static', tool='judge_summary',
+                                     result='static_solved', revision=1)]
+        result = state.accept(dict(task_id='task-1', reason='Accept the static review',
+                                   evidence_ids=['judge-static']))
+        self.assertEqual(result['verification'], 'static')
+        self.assertFalse(result['checks_passed'])
 
     def test_failure_cannot_be_accepted(self):
         state = TaskState()
@@ -83,6 +93,15 @@ class StateTests(unittest.TestCase):
         self.assertIsNone(public_event(dict(kind='ActionEvent', tool_name='think', action={'thought':'private'})))
         error = public_event(dict(kind='AgentErrorEvent', tool_name='terminal', tool_call_id='x', error='invalid argument'))
         self.assertEqual(error['observation']['error'], 'invalid argument')
+
+    def test_user_final_fallback_accepts_sdk_finish_action(self):
+        result = latest_user_final([{
+            'id': 'finish-1',
+            'kind': 'ActionEvent',
+            'tool_name': 'finish',
+            'action': {'message': '继续反馈这个问题'},
+        }])
+        self.assertEqual(result, {'event_id': 'finish-1', 'text': '继续反馈这个问题'})
 
     def test_cost_limit_requires_verifiable_model_pricing(self):
         with self.assertRaises(ValueError):

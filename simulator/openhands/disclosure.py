@@ -86,10 +86,10 @@ def release_feedback(feedback, released_ids=(), previous_failure_key=None,
 
 
 def released_feedback_unit(release):
-    """Return only the latest unit selected by ``release_feedback``."""
+    """Return the latest currently visible unit, even without new disclosure."""
     units = release.get('units') or []
-    added = release.get('added') or []
-    if not units or not added:
+    visible = release.get('released_unit_ids') or []
+    if not units or not visible:
         return None
-    wanted = added[-1]
+    wanted = visible[-1]
     return next((unit for unit in units if unit.get('id') == wanted), None)

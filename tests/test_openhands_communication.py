@@ -221,6 +221,52 @@ class CommunicationTests(unittest.TestCase):
         self.assertEqual(state.communication()['stage'],'initial_delegation')
         self.assertIsNone(state.communication()['last_code_reply'])
 
+    def test_new_task_user_input_does_not_replay_previous_task_context(self):
+        state = TaskState()
+        state.data.update(task_index=1, task_id='task-2', code_reply=None)
+        episode = OpenHandsEpisode.__new__(OpenHandsEpisode)
+        episode.config = {}
+        episode.state = state
+        episode.saved = {'tasks': [
+            {'kind': 'issue', 'title': 'First', 'body': 'first'},
+            {'kind': 'issue', 'title': 'Second', 'body': 'second'},
+        ]}
+        value = episode.user_input()
+        self.assertEqual(value['communication']['stage'], 'initial_delegation')
+        self.assertIsNone(value['communication']['last_code_reply'])
+        self.assertEqual(value['current_requirement']['body'], 'second')
+        self.assertEqual(value['instruction'], episode.new_task_instruction())
+
+    def test_accept_releases_new_task_with_same_direct_instruction(self):
+        with tempfile.TemporaryDirectory() as root:
+            episode = OpenHandsEpisode.__new__(OpenHandsEpisode)
+            episode.private = Path(root)
+            episode.state = TaskState()
+            episode.state.data['code_reply'] = {'id': 'c1', 'text': 'done'}
+            episode.saved = {
+                'control_results': {}, 'public': [], 'code_sources': [],
+                'last_code_reply': 'done',
+                'tasks': [
+                    {'kind': 'issue', 'title': 'First', 'body': 'first'},
+                    {'kind': 'issue', 'title': 'Second', 'body': 'second'},
+                ],
+            }
+            episode.collect_user_sources = MagicMock()
+            episode.persist = MagicMock()
+            episode.acceptance_gate = MagicMock()
+            episode.guard = MagicMock()
+            episode.guard.review.return_value = {'allowed': True, 'reasons': []}
+            result = episode._control({
+                'request_id': 'accept-first', 'operation': 'accept',
+                'payload': {'task_id': 'task-1', 'reason': 'accepted'},
+            })
+            self.assertTrue(result['accepted'])
+            self.assertEqual(result['instruction'], episode.user_input()['instruction'])
+            self.assertEqual(result['instruction'], episode.new_task_instruction())
+            self.assertIsNone(episode.state.communication()['last_code_reply'])
+            self.assertIsNone(episode.saved['last_code_reply'])
+            self.assertEqual(len(episode.state.data['accepted']), 1)
+
     def test_resume_rejects_old_schema_without_mutation(self):
         import tempfile
         from pathlib import Path

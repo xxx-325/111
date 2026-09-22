@@ -19,6 +19,12 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def send_response(self, code, message=None):
+        super().send_response(code, message)
+        if code >= 400:
+            # The SDK's retry setting does not disable its HTTP client's retries.
+            self.send_header("x-should-retry", "false")
+
     def client_gone(self):
         readable, _, _ = select.select([self.connection], [], [], 0)
         if not readable:
@@ -87,4 +93,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--request-timeout", type=int, default=REQUEST_DEADLINE_SECONDS)
+    args = parser.parse_args()
+    if args.request_timeout <= 0:
+        parser.error("request timeout must be positive")
+    REQUEST_DEADLINE_SECONDS = args.request_timeout
     ThreadingHTTPServer(("127.0.0.1", 8789), Handler).serve_forever()

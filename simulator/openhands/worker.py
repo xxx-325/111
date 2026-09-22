@@ -106,7 +106,13 @@ def write(path, value):
 
 def main():
     config = json.loads(Path("/inbox/config.json").read_text())
-    bridge = subprocess.Popen(["python", "-m", "simulator.native_http"])
+    from .config import model_request_limits
+    from . import control_tools
+
+    limits = model_request_limits(config)
+    control_tools.CONTROL_DEADLINE_SECONDS = limits["request_timeout"]
+    bridge = subprocess.Popen(["python", "-m", "simulator.native_http",
+                               "--request-timeout", str(limits["request_timeout"])])
     events = Path("/outbox/events.jsonl")
 
     def callback(event):
@@ -127,8 +133,9 @@ def main():
         base_url="http://127.0.0.1:8789/v1",
         stream=False,
         num_retries=0,
-        max_input_tokens=65536,
-        max_output_tokens=4096,
+        max_input_tokens=limits["max_input_tokens"],
+        max_output_tokens=limits["max_output_tokens"],
+        timeout=limits["request_timeout"] + 5,
         disable_vision=True,
         temperature=config.get("temperature", 0.3),
         usage_id=config["role"],

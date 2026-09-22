@@ -220,15 +220,7 @@ def validate_public_feedback(feedback, observations=(), evidence_ids=()):
 
 def project_latest_feedback(observations, summary='', symptom=''):
     """Bind public feedback to host-owned observations without model-visible IDs."""
-    eligible = []
-    for item in observations:
-        observation = item.get('observation') or {}
-        command = observation.get('command', '')
-        if (item.get('tool') != 'terminal' or observation.get('timeout')
-                or observation.get('exit_code') == -1
-                or '/reference' in command or '/workspace/experiments' in command):
-            continue
-        eligible.append(item)
+    eligible = public_feedback_observations(observations)
     identifiers = [item['id'] for item in eligible]
     # Ordinary shell output after a complete execution block must not replace
     # the concrete result. A newer labeled block that is malformed is kept
@@ -257,6 +249,24 @@ def project_latest_feedback(observations, summary='', symptom=''):
             selector['summary'] = summary
         return project_public_feedback(selector, eligible, identifiers)
     return {}
+
+
+def public_feedback_observations(observations):
+    """Return current candidate observations that may support public feedback."""
+    eligible = []
+    for item in observations:
+        observation = item.get('observation') or {}
+        command = observation.get('command', '')
+        if (item.get('tool') != 'terminal' or observation.get('timeout')
+                or observation.get('exit_code') == -1
+                or '/reference' in command or '/workspace/experiments' in command):
+            continue
+        eligible.append(item)
+    return eligible
+
+
+def has_public_feedback_source(observations):
+    return bool(public_feedback_observations(observations))
 
 
 def has_projectable_execution_blocks(observations):
@@ -300,9 +310,17 @@ def authorized_feedback_values(feedback):
 
 
 def feedback_failure_key(feedback):
-    """Return a stable private identity from the reviewed symptom only."""
+    """Return a stable identity from execution values, or the logic symptom."""
     if not isinstance(feedback, dict):
         return None
+    kind = feedback.get('kind')
+    if kind in ('runtime_error', 'wrong_output'):
+        result_key = 'error' if kind == 'runtime_error' else 'output'
+        values = (feedback.get('input'), feedback.get(result_key))
+        if all(isinstance(value, str) for value in values):
+            return hashlib.sha256(
+                ('execution\0' + kind + '\0' + '\0'.join(values)).encode()
+            ).hexdigest()
     symptom = feedback.get('symptom') or feedback.get('summary')
     if not isinstance(symptom, str) or not symptom.strip():
         return None
@@ -329,7 +347,9 @@ def feedback_units(feedback):
     units = [dict(
         id=symptom_id,
         category='symptom',
-        observation={'kind': 'logic_error', 'summary': symptom},
+        observation={'kind': 'logic_error', 'summary': symptom,
+                     'evidence_basis': feedback.get(
+                         'evidence_basis', 'static_observation')},
     )]
     kind = feedback.get('kind')
     if kind == 'runtime_error':
@@ -337,12 +357,14 @@ def feedback_units(feedback):
             'kind': kind,
             'input': feedback.get('input', ''),
             'error': feedback.get('error', ''),
+            'evidence_basis': feedback.get('evidence_basis', 'execution'),
         }
     elif kind == 'wrong_output':
         observation = {
             'kind': kind,
             'input': feedback.get('input', ''),
             'output': feedback.get('output', ''),
+            'evidence_basis': feedback.get('evidence_basis', 'execution'),
         }
         summary = feedback.get('summary')
         if isinstance(summary, str) and summary and summary != symptom:
@@ -350,7 +372,9 @@ def feedback_units(feedback):
     else:
         summary = feedback.get('summary')
         if isinstance(summary, str) and summary and summary != symptom:
-            observation = {'kind': kind, 'summary': summary}
+            observation = {'kind': kind, 'summary': summary,
+                           'evidence_basis': feedback.get(
+                               'evidence_basis', 'static_observation')}
         else:
             observation = None
     if observation is not None:
@@ -361,7 +385,11 @@ def feedback_units(feedback):
 
 def feedback_units_failure_key(units):
     """Derive the private failure identity from stored units, not new state."""
-    first = next((unit for unit in units or () if unit.get('category') == 'symptom'), None)
+    first = next((unit for unit in units or ()
+                  if unit.get('category') == 'concrete_observation'), None)
+    if first is None:
+        first = next((unit for unit in units or ()
+                      if unit.get('category') == 'symptom'), None)
     return feedback_failure_key((first or {}).get('observation', {}))
 
 

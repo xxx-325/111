@@ -26,7 +26,7 @@ class InvalidDecomposition(ValueError):
 
 
 def call_json(relay, system, data):
-    body=dict(model=relay.config['model'],stream=False,temperature=0,max_tokens=4096,
+    body=dict(model=relay.config['model'],stream=False,temperature=0,max_tokens=relay.config.get('max_output_tokens'),
         response_format={'type':'json_object'},messages=[{'role':'system','content':system},
             {'role':'user','content':json.dumps(data,ensure_ascii=False)}])
     status,raw=relay.dispatch(dict(id='prepare-'+uuid.uuid4().hex,path='/v1/chat/completions',

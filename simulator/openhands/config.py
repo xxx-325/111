@@ -10,6 +10,21 @@ from pathlib import Path
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
 
+def model_request_limits(config):
+    """Shared SDK/relay limits; ``None`` leaves output sizing to the provider."""
+    output = config.get("max_output_tokens")
+    input_tokens = config.get("max_input_tokens", 262144)
+    timeout = config.get("request_timeout", 175)
+    if output is not None and (type(output) is not int or output <= 0):
+        raise ValueError("max_output_tokens must be a positive integer or null")
+    if type(input_tokens) is not int or input_tokens <= 0:
+        raise ValueError("max_input_tokens must be a positive integer")
+    if type(timeout) is not int or timeout <= 0:
+        raise ValueError("request_timeout must be a positive integer in seconds")
+    return dict(max_input_tokens=input_tokens, max_output_tokens=output,
+                request_timeout=timeout)
+
+
 def validate_example(config, *, source="<config>"):
     """Return a short list of static configuration errors."""
     errors = []
@@ -36,6 +51,12 @@ def validate_example(config, *, source="<config>"):
         value = config.get(role)
         if not isinstance(value, dict) or not value.get("model"):
             errors.append(f"{source}: {role}.model is required")
+    for role in ("user", "code", "judge", "decomposer"):
+        if isinstance(config.get(role), dict):
+            try:
+                model_request_limits(config[role])
+            except ValueError as exc:
+                errors.append(f"{source}: {role}.{exc}")
     return errors
 
 

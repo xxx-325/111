@@ -12,6 +12,7 @@ import threading
 import time
 
 import httpx
+from .config import model_request_limits
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,13 @@ class RelayProviderError(RuntimeError):
         self.status = status
 
 
+class RelayOutputLimitError(RuntimeError):
+    """A completed provider request was truncated before a usable response."""
+
+
 def _error_code(error):
+    if isinstance(error, RelayOutputLimitError):
+        return "PROVIDER_OUTPUT_TRUNCATED"
     if isinstance(error, TimeoutError):
         return "REQUEST_DEADLINE"
     if isinstance(error, RelayAuditError):
@@ -83,6 +90,7 @@ class Relay:
         role="user",
     ):
         self.config, self.mailbox, self.audit = config, mailbox, audit
+        self.limits = model_request_limits(config)
         self.control, self.deadline = control, deadline
         self.budget, self.role = budget, role
         self.stop = threading.Event()
@@ -150,7 +158,7 @@ class Relay:
 
     def context(self, packet):
         inherited = _CURRENT_CONTEXT.get()
-        deadlines = [time.time() + 175]
+        deadlines = [time.time() + self.limits["request_timeout"]]
         if self.deadline:
             deadlines.append(time.time() + max(0, self.deadline - time.monotonic()))
         if packet.get("deadline"):
@@ -218,14 +226,19 @@ class Relay:
             t.get("type") != "function" for t in body.get("tools", [])
         ):
             raise ValueError("only non-streaming local function calls are supported")
-        requested_output = body.pop(
-            "max_completion_tokens", body.get("max_tokens", 4096)
-        )
-        if not isinstance(requested_output, int) or not 0 < requested_output <= 4096:
-            raise ValueError(
-                "output token request exceeds the configured gateway bound"
-            )
-        body["max_tokens"] = requested_output
+        requested_output = body.pop("max_completion_tokens", body.get("max_tokens"))
+        configured_output = self.limits["max_output_tokens"]
+        if configured_output is None:
+            # SDK model metadata may insert a default even when our config is null.
+            body.pop("max_tokens", None)
+        elif requested_output is not None:
+            if type(requested_output) is not int or requested_output <= 0:
+                raise ValueError("output token request must be a positive integer")
+            if requested_output > configured_output:
+                raise ValueError("output token request exceeds the configured gateway bound")
+            body["max_tokens"] = requested_output
+        else:
+            body["max_tokens"] = configured_output
         if self.budget:
             if (
                 self.budget.maximum is not None
@@ -239,6 +252,10 @@ class Relay:
         headers = {
             "Content-Type": "application/json",
             "Authorization": "Bearer " + os.environ[self.config["key_env"]],
+            # Some OpenAI-compatible gateways reject Python's default client
+            # identity at the edge. Keep the provider request compatible with
+            # the curl-based smoke check without exposing credentials.
+            "User-Agent": "curl/8.0",
         }
         started = time.monotonic()
         # Request contents can contain private user checks; this audit is host-private.
@@ -264,6 +281,7 @@ class Relay:
         metrics = {}
         stage = "provider"
         provider_failure_audited = False
+        provider_accounted = False
         try:
             status, raw, metrics = asyncio.run(
                 self._provider_request(url, body, headers, context, metrics)
@@ -299,6 +317,7 @@ class Relay:
             if self.budget:
                 stage = "budget_accounting"
                 self.budget.after(self.role, result.get("usage", {}), reservation)
+            provider_accounted = True
             stage = "response_audit"
             self._audit(
                 {
@@ -310,9 +329,12 @@ class Relay:
                     "usage": result.get("usage", {}),
                 },
             )
+            stage = "response_validation"
+            if any(choice.get("finish_reason") == "length" for choice in result.get("choices", [])):
+                raise RelayOutputLimitError("provider output token limit reached; no reply or tool call forwarded")
             return status, raw
         except Exception as error:
-            if self.budget and not provider_failure_audited:
+            if self.budget and not provider_failure_audited and not provider_accounted:
                 self.budget.uncertain(reservation)
             if not provider_failure_audited:
                 self._audit(

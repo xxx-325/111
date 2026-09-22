@@ -120,6 +120,39 @@ class JudgeTests(unittest.TestCase):
             self.assertEqual(record['status'],'ready')
             self.assertEqual(record['payload']['public_feedback']['output'],'y')
 
+    def test_invalid_solved_validation_is_retained_for_one_verdict_correction(self):
+        with tempfile.TemporaryDirectory() as root:
+            episode = self.episode(root)
+            root = Path(root)
+            (root / 'judge-workspace/candidate').mkdir(parents=True)
+            (root / 'workspace/candidate').mkdir(parents=True)
+            job = dict(self.job, candidate_version=candidate_hash(root / 'workspace/candidate'))
+            episode.progress['job'] = job
+            episode.saved.update(tasks=[dict(title='bug', body='hint')], public=[], control_results={})
+            observations = [{
+                'id': 'pytest-failed', 'tool': 'terminal',
+                'observation': {'command': 'pytest -q', 'exit_code': 1},
+                'exit_code': 1,
+            }]
+            episode.judge_events = MagicMock(return_value=([], observations))
+            episode.agents = {'judge': MagicMock()}
+            packet = dict(
+                request_id='invalid-solved', operation='judge_verdict',
+                payload=dict(outcome='solved', reason='looks fixed',
+                             feedback='', requested_fragment_id=''),
+            )
+            with patch('simulator.openhands.progressive.review_verdict') as review:
+                result = episode.judge_control(packet)
+            record = episode.progress['decisions'][job['id']]
+            self.assertTrue(result['accepted'])
+            self.assertTrue(result['verdict_revision_required'])
+            self.assertEqual(record['status'], 'verdict_pending')
+            self.assertIn('successful validation exit',
+                          record['verdict_rejections'][0]['reason'])
+            self.assertEqual(record['disclosure']['before'], ['s1'])
+            self.assertEqual(record['disclosure']['after'], ['s1'])
+            review.assert_not_called()
+
     def test_valid_conclusion_with_bad_latest_block_requests_feedback_revision(self):
         with tempfile.TemporaryDirectory() as root:
             episode = self.episode(root)
@@ -375,6 +408,102 @@ class JudgeTests(unittest.TestCase):
             self.assertTrue(episode.carry_post_solved_verdict())
             self.assertEqual(len(episode.current()['verdict_carries']), 1)
 
+    def snapshot_episode(self, root):
+        episode = self.episode(root)
+        episode.progress['job'] = None
+        episode.saved['tasks'] = [dict(kind='issue', title='bug', body='hint')]
+        episode.config['repository'] = root
+        episode.agents = {'code': MagicMock(), 'judge': MagicMock()}
+        episode.agents['judge'].events.return_value = []
+        episode.start_judge = MagicMock()
+        episode.judgment_task = MagicMock(return_value=episode.saved['tasks'][0])
+        candidate = Path(root) / 'workspace/candidate'
+        mirror = Path(root) / 'judge-workspace/candidate'
+        for directory in (candidate, mirror):
+            (directory / 'docs').mkdir(parents=True)
+        (candidate / 'docs/prompts.md').write_text('complete document\n')
+        (mirror / 'docs/prompts.md').write_text('truncated\n')
+        episode.agents['judge'].sandbox.candidate_hash.side_effect = lambda: candidate_hash(mirror)
+        return episode, candidate, mirror
+
+    def test_container_view_mismatch_rejects_even_when_host_trees_match(self):
+        with tempfile.TemporaryDirectory() as root:
+            episode, candidate, mirror = self.snapshot_episode(root)
+            episode.agents['judge'].sandbox.candidate_hash.side_effect = None
+            episode.agents['judge'].sandbox.candidate_hash.return_value = 'stale-container'
+            with self.assertRaisesRegex(RuntimeError, 'Judge 容器内候选与宿主快照不同步'):
+                episode.before_user_turn()
+            self.assertEqual(candidate_hash(candidate), candidate_hash(mirror))
+            episode.agents['judge'].turn.assert_not_called()
+            self.assertIsNone(episode.progress['job'])
+
+    def test_new_judge_review_refreshes_stale_snapshot_and_binds_its_hash(self):
+        with tempfile.TemporaryDirectory() as root:
+            episode, candidate, mirror = self.snapshot_episode(root)
+            episode.current()['verdict'] = dict(outcome='unsolved', revision=0)
+            (mirror / 'deleted.md').write_text('old file')
+            def check_start():
+                self.assertEqual((mirror / 'docs/prompts.md').read_bytes(),
+                                 (candidate / 'docs/prompts.md').read_bytes())
+                self.assertFalse((mirror / 'deleted.md').exists())
+                self.assertEqual(candidate_hash(mirror), candidate_hash(candidate))
+            episode.start_judge.side_effect = check_start
+            episode.agents['judge'].turn.side_effect = RuntimeError('test Judge reached')
+            with self.assertRaisesRegex(RuntimeError, 'test Judge reached'):
+                episode.before_user_turn()
+            episode.start_judge.assert_called_once_with()
+            episode.agents['judge'].turn.assert_called_once()
+            self.assertEqual(episode.progress['job']['candidate_version'],
+                             candidate_hash(mirror))
+            episode.agents['code'].pause.assert_called_once_with()
+            episode.agents['code'].unpause.assert_called_once_with()
+
+    def test_skipped_snapshot_sync_rejects_review_before_judge_starts(self):
+        with tempfile.TemporaryDirectory() as root:
+            episode, _, _ = self.snapshot_episode(root)
+            episode.sync_judge = MagicMock()
+            with self.assertRaisesRegex(RuntimeError, 'judge 镜像与候选不同步'):
+                episode.before_user_turn()
+            episode.sync_judge.assert_called_once_with()
+            episode.start_judge.assert_not_called()
+            episode.agents['judge'].turn.assert_not_called()
+            self.assertIsNone(episode.progress['job'])
+            self.assertEqual(episode.progress['decisions'], {})
+            episode.agents['code'].unpause.assert_called_once_with()
+
+    def test_snapshot_guard_catches_rsync_same_size_and_mtime_stale_content(self):
+        import os
+        with tempfile.TemporaryDirectory() as root:
+            episode, candidate, mirror = self.snapshot_episode(root)
+            for directory, content in ((candidate, 'new\n'), (mirror, 'old\n')):
+                source = directory / 'docs/prompts.md'
+                source.write_text(content)
+                os.utime(source, (1700000000, 1700000000))
+            with self.assertRaisesRegex(RuntimeError, 'judge 镜像与候选不同步'):
+                episode.before_user_turn()
+            episode.start_judge.assert_not_called()
+            episode.agents['judge'].turn.assert_not_called()
+            self.assertIsNone(episode.progress['job'])
+
+    def test_cached_verdict_or_decision_does_not_start_a_new_review(self):
+        for cached in ('verdict', 'decision'):
+            with self.subTest(cached=cached), tempfile.TemporaryDirectory() as root:
+                episode, _, _ = self.snapshot_episode(root)
+                episode.sync_judge = MagicMock()
+                if cached == 'verdict':
+                    episode.current()['verdict'] = dict(outcome='unsolved', revision=1)
+                else:
+                    record = {'job': self.job}
+                    episode.progress.update(job=self.job, decisions={self.job['id']: record})
+                    episode.resolve_decision = MagicMock(return_value=record)
+                    episode.apply_decision = MagicMock()
+                episode.before_user_turn()
+                episode.sync_judge.assert_not_called()
+                episode.start_judge.assert_not_called()
+                episode.agents['judge'].turn.assert_not_called()
+                if cached == 'decision':
+                    episode.apply_decision.assert_called_once_with(record)
+
     def test_consecutive_read_only_followups_reuse_original_judge_evidence(self):
         with tempfile.TemporaryDirectory() as root:
             episode = self.episode(root)
@@ -498,7 +627,7 @@ class JudgeTests(unittest.TestCase):
         }
         return episode, permit
 
-    def test_post_solved_plan_or_understand_permit_cannot_accept(self):
+    def test_post_solved_plan_or_understand_permit_can_accept_without_followup(self):
         for state in ('PLAN', 'UNDERSTAND'):
             with self.subTest(state=state), tempfile.TemporaryDirectory() as root:
                 episode, permit = self.acceptance_episode(root, state)
@@ -506,26 +635,13 @@ class JudgeTests(unittest.TestCase):
                     'request_id': 'accept-followup', 'operation': 'accept',
                     'payload': {'task_id': 'task-1', 'reason': 'done'},
                 }
-                rejected = episode._control(packet)
+                result = episode._control(packet)
                 repeated = episode._control(packet)
-                self.assertFalse(rejected['accepted'])
-                self.assertEqual(repeated, rejected)
-                self.assertIn('must be sent before acceptance', rejected['reason'])
-                self.assertEqual(episode.state.data['permit']['id'], permit['id'])
-                self.assertEqual(episode.state.data['phase'], 'user')
-
-                if state == 'PLAN':
-                    sent = episode._control({
-                        'request_id': 'send-followup', 'operation': 'send',
-                        'payload': {
-                            'task_id': 'task-1', 'permit_id': permit['id'],
-                            'text': 'Please explain this strategy first.',
-                            'evidence_ids': ['judge-task-1-r1'],
-                        },
-                    })
-                    self.assertTrue(sent['accepted'])
-                    self.assertIsNone(episode.state.data['permit'])
-                    self.assertEqual(episode.state.data['phase'], 'code')
+                self.assertTrue(result['accepted'])
+                self.assertTrue(result['ended'])
+                self.assertEqual(repeated, result)
+                self.assertEqual(episode.state.data['phase'], 'ended')
+                self.assertIsNone(episode.state.data['permit'])
 
     def test_post_solved_evaluate_permit_can_accept(self):
         with tempfile.TemporaryDirectory() as root:
@@ -916,10 +1032,10 @@ class JudgeTests(unittest.TestCase):
             episode.request_feedback_revision(record)
             episode.request_feedback_revision(record)
             episode.request_feedback_revision(record)
-            self.assertEqual(len(calls),2)
-            self.assertEqual(record['feedback_attempts'],2)
-            self.assertEqual(record['status'],'invalid')
-            self.assertIn('two correction attempts',record['error'])
+            self.assertEqual(len(calls),1)
+            self.assertEqual(record['feedback_attempts'],1)
+            self.assertEqual(record['status'],'verdict_pending')
+            self.assertIn('no candidate-only', record['verdict_rejections'][0]['reason'])
 
     def test_no_reference_snapshot_mount_for_code(self):
         from simulator.openhands.container import SDKContainer
@@ -1021,6 +1137,17 @@ class JudgeTests(unittest.TestCase):
             self.assertEqual(visible['kind'], 'wrong_output')
             self.assertEqual(visible['input'], 'prefix@example.com')
             self.assertEqual(visible['output'], 'original')
+
+            # A repeated failure with no newly releasable unit must retain the
+            # latest visible observation instead of publishing an empty one.
+            episode.saved['revision'] = 2
+            repeated_again = dict(repeated, job=dict(self.job, id='judge-task-1-r2b', revision=2))
+            target, disclosure = plan_turn_disclosure(
+                episode.current(), repeated_again['payload'])
+            repeated_again.update(disclosure={'after': target},
+                                  feedback_disclosure=disclosure)
+            episode.apply_decision(repeated_again)
+            self.assertEqual(task_feedback(current)['observation']['output'], 'original')
 
             episode.saved['revision'] = 3
             changed = dict(record, job=dict(self.job, id='judge-task-1-r3', revision=3),

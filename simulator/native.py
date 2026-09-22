@@ -85,7 +85,11 @@ class NativeAgent:
                         raise ValueError('server-side tools are not allowed by the offline relay')
                     body['model'] = self.config['model']
                     key = os.environ[self.config['key_env']]
-                    headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key}
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + key,
+                        'User-Agent': 'curl/8.0',
+                    }
                     if self.config['adapter'] == 'claude':
                         headers.update({'x-api-key': key, 'anthropic-version': '2023-06-01'})
                     suffix = packet['path'][3:]

@@ -26,6 +26,7 @@ from .judge import (
 from .feedback_projection import (
     PublicFeedbackError,
     feedback_units_failure_key,
+    has_public_feedback_source,
     project_latest_feedback,
     has_projectable_execution_blocks,
     validate_public_feedback,
@@ -59,6 +60,7 @@ PROGRESSIVE_POLICY_FILES = (
     "commit_preparation.py",
     "source.py",
     "sandbox.py",
+    "snapshot_volume.py",
     "remote_tools.py",
     "remote_safety.py",
     "evo_tests.py",
@@ -441,7 +443,7 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
             and source_evidence.get("tool") == "judge_summary"
             and (source_evidence.get("revision") == pending.get("origin_revision")
                  or carried_source)
-            and source_evidence.get("result") == "passed"
+            and source_evidence.get("result") in ("passed", "static_solved")
             and (source_evidence.get("summary") or {}).get("outcome") == "solved"
             and current.get("verdict") == source
             and self.saved["revision"] == pending.get("origin_revision", -1) + 1
@@ -516,12 +518,12 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
             )
 
     def validate_acceptance_intent(self):
-        permit = self.state.data.get("permit") or {}
-        if permit.get("post_solved") and permit.get("state") != "EVALUATE":
-            raise TransitionError(
-                "the selected post-solved follow-up must be sent before acceptance; "
-                "only an EVALUATE permit may accept"
-            )
+        # A solved task may end from any still-open post-solved selection.  The
+        # selection is an invitation to continue the conversation, not a
+        # requirement to invent or send another message before accepting.
+        # acceptance_gate() remains the authority for the solved revision,
+        # candidate hash, required tests, and unresolved failures.
+        return None
 
     def prepare_pending_transition(self, action):
         """Reproduce current-Judge evidence binding without re-reviewing."""
@@ -746,11 +748,58 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
                         ],
                     )
             except Exception as error:
-                record.update(
-                    accepted=False,
-                    status="invalid",
-                    error=type(error).__name__ + ": " + str(error),
-                )
+                error_text = type(error).__name__ + ": " + str(error)
+                if (
+                    submitted_payload.get("outcome") == "solved"
+                    and (
+                        "solved requires a successful validation exit" in error_text
+                        or "solved validation pipeline has no trusted exit policy"
+                        in error_text
+                    )
+                ):
+                    current = self.current()
+                    visible = visible_requirement(
+                        current["plan"], current.get("released", [])
+                    )
+                    record.setdefault(
+                        "disclosure",
+                        dict(
+                            before=list(current.get("released", [])),
+                            after=list(current.get("released", [])),
+                            added=[],
+                            requirement=visible,
+                        ),
+                    )
+                    record.setdefault(
+                        "feedback_disclosure",
+                        dict(
+                            failure_key=None,
+                            units=[],
+                            released_unit_ids=[],
+                            added=[],
+                        ),
+                    )
+                    record.setdefault("feedback_version", 0)
+                    record.setdefault("feedback_revisions", [])
+                    record["reviewed_payload"] = copy.deepcopy(record.get("payload", {}))
+                    # Keep the original evidence and let the same Judge correct
+                    # the outcome once; do not silently turn an invalid success
+                    # into a passed verdict or rerun inspection.
+                    record.update(
+                        accepted=False,
+                        status="verdict_pending",
+                        verdict_rejections=[dict(
+                            source="validation_evidence",
+                            reason=error_text,
+                        )],
+                        verdict_revisions=[],
+                    )
+                else:
+                    record.update(
+                        accepted=False,
+                        status="invalid",
+                        error=error_text,
+                    )
             record_id = job["id"]
             save(self.private / "judgments" / f"{record_id}.json", record)
             self.progress["decisions"][record_id] = record
@@ -1066,7 +1115,6 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
     def request_feedback_revision(self, record):
         # A resumed retained verdict reaches this path before a fresh inspection would
         # normally initialize the persistent Judge conversation.
-        self.start_judge()
         attempts = record.get(
             "feedback_attempts", len(record.get("feedback_revisions", []))
         )
@@ -1079,6 +1127,25 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
             save(self.private / "judgments" / f"{record['job']['id']}.json", record)
             self.persist()
             return record
+        if attempts >= 1 and not has_public_feedback_source(
+            record.get("observations", [])
+        ):
+            record.update(
+                accepted=False,
+                status="verdict_pending",
+                verdict_rejections=[dict(
+                    source="feedback_source",
+                    reason=(
+                        "current Judge observations contain no candidate-only "
+                        "evidence that can support public feedback"
+                    ),
+                )],
+                verdict_revisions=[],
+            )
+            save(self.private / "judgments" / f"{record['job']['id']}.json", record)
+            self.persist()
+            return record
+        self.start_judge()
         rejection = record.get("feedback_rejections", [])[-1]["reason"]
         version = attempts + 1
         record["feedback_attempts"] = version
@@ -1174,13 +1241,11 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
         return record
 
     def resolve_decision(self, record):
-        if record.get("status") == "verdict_pending":
-            record = self.request_verdict_revision(record)
-        while (
-            record.get("status", "ready" if record.get("accepted") else "invalid")
-            == "feedback_pending"
-        ):
-            record = self.request_feedback_revision(record)
+        while record.get("status") in ("feedback_pending", "verdict_pending"):
+            if record.get("status") == "verdict_pending":
+                record = self.request_verdict_revision(record)
+            else:
+                record = self.request_feedback_revision(record)
             if record.get("status") == "ready":
                 record = self.review_decision(record)
         if record.get("status") == "ready":
@@ -1294,6 +1359,7 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
             outcome=payload["outcome"],
             revision=job["revision"],
             candidate_version=job["candidate_version"],
+            verification_mode=self.config.get("verification_mode", "default"),
             required_tests=(job.get("required_tests") or {}).get("outcome"),
         )
         pending_followup = current.get("post_solved_followup")
@@ -1364,7 +1430,14 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
                 revision=job["revision"],
                 tool="judge_summary",
                 source="Judge",
-                result="passed" if payload["outcome"] == "solved" else "observed",
+                result=(
+                    "static_solved"
+                    if payload["outcome"] == "solved"
+                    and self.config.get("verification_mode") == "static_reference"
+                    else "passed"
+                    if payload["outcome"] == "solved"
+                    else "observed"
+                ),
                 summary=current["feedback"],
                 simulated_experience=current["simulated_experience"],
             )
@@ -1412,7 +1485,22 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
                     "Judge stopped without a saved verdict; inspect retained events"
                 )
             self.sync_judge()
+            # Bind the job to the copy Judge actually reads, not just Code's tree.
+            candidate_version = candidate_hash(self.root / "workspace/candidate")
+            judge_version = candidate_hash(self.root / "judge-workspace/candidate")
+            if judge_version != candidate_version:
+                raise RuntimeError(
+                    "judge 镜像与候选不同步 (Judge snapshot differs from candidate): "
+                    f"candidate={candidate_version}, judge={judge_version}"
+                )
             self.start_judge()
+            self.agents['judge'].sandbox.sync_snapshots()
+            visible_version = self.agents['judge'].sandbox.candidate_hash()
+            if visible_version != judge_version:
+                raise RuntimeError(
+                    'Judge 容器内候选与宿主快照不同步: '
+                    f'host={judge_version}, container={visible_version}'
+                )
             identifier = f"judge-{self.state.data['task_id']}-r{self.saved['revision']}"
             (self.private / "judgments").mkdir(exist_ok=True)
             job = dict(
@@ -1420,7 +1508,7 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
                 command_id="turn-" + identifier,
                 task_id=self.state.data["task_id"],
                 revision=self.saved["revision"],
-                candidate_version=candidate_hash(self.root / "workspace/candidate"),
+                candidate_version=judge_version,
                 code_reply=self.state.data["code_reply"],
                 event_start=len(self.agents["judge"].events()),
             )
