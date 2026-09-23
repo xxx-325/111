@@ -38,7 +38,7 @@ def initial_release(plan):
     return include(plan,[],[first])
 
 
-def release_after(plan, released, verdict):
+def release_after(plan, released, verdict, *, triggered_only=()):
     check_released(plan,released)
     requested=verdict.get('requested_fragment_ids',[])
     if verdict['outcome']=='solved':
@@ -47,7 +47,8 @@ def release_after(plan, released, verdict):
         return include(plan,released,requested)
     if verdict['outcome']=='unsolved':
         # Validated plans are ordered within symptom/cause groups, never merged.
-        item=next((item for item in plan['items'] if item['id'] not in released),None)
+        item=next((item for item in plan['items']
+                   if item['id'] not in released and item['id'] not in triggered_only),None)
         if item:
             return include(plan,released,[item['id']])
     return list(released)

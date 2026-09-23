@@ -12,7 +12,7 @@ class VerdictAction(Action):
     feedback: str = Field(default='', description='Required short user-observable symptom for an unsolved verdict; never a test name, path, root cause, or fix')
     feedback_detail: str = Field(default='', description='Optional concrete input, actual output/error, or usage condition; never private test details or implementation advice')
     requested_fragment_id: str = Field(default='',
-        description='One hidden issue fragment needed to answer a current Code question; otherwise empty.')
+        description='One hidden fragment needed by a current Code question or an evidenced scenario trigger; otherwise empty.')
 
 
 class SubmitVerdictTool(ToolDefinition):

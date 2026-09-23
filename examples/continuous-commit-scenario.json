@@ -1,0 +1,32 @@
+{
+  "schema": "continuous-commit-scenario-v1",
+  "commits": [
+    {
+      "commit": "REPLACE_WITH_FIRST_FULL_SHA",
+      "facts": [
+        {
+          "id": "consumer_a_encoding",
+          "type": "M2",
+          "text": "A 客户的外部导入器暂时只接受 UTF-8 编码。",
+          "scope": "提供给 A 客户的导出文件",
+          "trigger": "Code 询问文件使用方或导出编码时"
+        }
+      ],
+      "repository_edits": [],
+      "extensions": [
+        {
+          "title": "增加批量导出",
+          "body": "把当前单项导出能力扩展到选定的多项，提供给同一客户使用。",
+          "facts": [],
+          "repository_edits": []
+        }
+      ]
+    },
+    {
+      "commit": "REPLACE_WITH_NEXT_FULL_SHA",
+      "facts": [],
+      "repository_edits": [],
+      "extensions": []
+    }
+  ]
+}

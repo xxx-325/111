@@ -41,6 +41,7 @@ from .user_projection import UserViewMixin
 from .simulated_experience import build_experience
 from .requirement_scope import prepare_document, validate_scope
 from .commit_preparation import validate_projection
+from .commit_scenario import add_fact_fragments, apply_repository_edits, scenario_judge_context
 
 
 PROGRESSIVE_POLICY_FILES = (
@@ -59,6 +60,8 @@ PROGRESSIVE_POLICY_FILES = (
     "requirement_scope.py",
     "commit_preparation.py",
     "source.py",
+    "commit_scenario.py",
+    "memory_episode.py",
     "sandbox.py",
     "snapshot_volume.py",
     "remote_tools.py",
@@ -73,6 +76,10 @@ CARRYABLE_POST_SOLVED_STATES = frozenset(("RETRIEVE", "UNDERSTAND", "PLAN"))
 
 
 def progressive_config(config):
+    from .commit_scenario import load_scenario
+    scenario = load_scenario(config)
+    if scenario:
+        config = dict(config, _scenario_sha256=scenario[1])
     return dict(
         config,
         _progressive_policy={
@@ -140,11 +147,13 @@ def plan_turn_disclosure(current, payload):
             if identifier in known
         ]
         feedback_release["added"] = []
-        target = release_after(current["plan"], before, payload)
+        target = release_after(current["plan"], before, payload,
+                               triggered_only=current.get('fact_triggers', {}))
     elif feedback_release["added"]:
         target = before
     else:
-        target = release_after(current["plan"], before, payload)
+        target = release_after(current["plan"], before, payload,
+                               triggered_only=current.get('fact_triggers', {}))
     return target, feedback_release
 
 
@@ -251,9 +260,23 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
             rebuilt = validate({"items": result["plan"]["items"]}, requirement_document)
             if rebuilt != result["plan"]:
                 raise ValueError("cached decomposition order or content is invalid")
-            released = initial_release(result["plan"])
+            plan, triggers = result['plan'], {}
+            if task.get('scenario'):
+                plan, requirement_document, triggers = add_fact_fragments(
+                    plan, requirement_document, task['scenario'])
+            released = initial_release(plan)
+            if triggers:
+                known_facts = {
+                    prior['fact_triggers'][fragment]['fact_id']
+                    for prior in self.progress['tasks'].values()
+                    for fragment in prior.get('released', [])
+                    if fragment in prior.get('fact_triggers', {})
+                }
+                released += [fragment for fragment, fact in triggers.items()
+                             if fact['fact_id'] in known_facts]
             self.progress["tasks"][key] = dict(
-                plan=result["plan"],
+                plan=plan,
+                fact_triggers=triggers,
                 released=released,
                 feedback=None,
                 verdict=None,
@@ -276,8 +299,12 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
 
     def judgment_task(self):
         task = self.saved["tasks"][self.state.data["task_index"]]
+        scenario_context = scenario_judge_context(task['scenario']) if task.get('scenario') else {}
+        if scenario_context:
+            scenario_context['fragment_triggers'] = self.current().get('fact_triggers', {})
         return dict(
             task,
+            scenario_context=scenario_context,
             verification_mode=self.config.get("verification_mode", "default"),
             **self.current().get(
                 "requirement_document", {k: task[k] for k in ("title", "body")}
@@ -286,16 +313,28 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
 
     def requirement(self):
         current = self.current()
-        return visible_requirement(current["plan"], current["released"])
+        visible = visible_requirement(current["plan"], current["released"])
+        if current.get('fact_triggers'):
+            visible['body'] += ('\n\nUse each known condition only in its stated scope. '
+                                'A later correction replaces an earlier condition only where they overlap.')
+        return visible
 
     def user_run_commands(self):
         # Configured commands can themselves disclose withheld reproduction details.
         # Only expose them once all original issue information has been released.
         current = self.current()
-        if set(current["released"]) != {
+        original = {
             item["id"] for item in current["plan"]["items"]
-        }:
+            if item['id'] not in current.get('fact_triggers', {})
+        }
+        if not original.issubset(current['released']):
             return []
+        task = self.saved.get('tasks', [])[self.state.data['task_index']] if self.saved.get('tasks') else {}
+        scenario = task.get('scenario')
+        if scenario:
+            if not scenario['original']:
+                return []
+            return self.config['tasks'][scenario['source_task_index']].get('user_run_commands', [])
         return super().user_run_commands()
 
     def prepare_send_payload(self, payload):
@@ -1455,6 +1494,7 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
 
     def before_user_turn(self):
         current = self.current()
+        self.apply_scenario_edits()
         if not self.state.data.get("code_reply") or self.saved.get("closing"):
             return
         self.carry_post_solved_verdict()
@@ -1557,6 +1597,21 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
                 ],
                 released_fragment_ids=current["released"],
             )
+            if task.get('scenario'):
+                from .memory_episode import visible_events
+                public = self.saved['public']
+                start = next(i for i in range(len(public) - 1, -1, -1)
+                             if public[i]['kind'] == 'user')
+                job['public_turn'] = visible_events(
+                    public[start:], self.private / 'code/provider.jsonl')
+                prompt['scenario'] = task['scenario_context']
+                prompt['public_turn'] = job['public_turn']
+                prompt['fragment_triggers'] = current['fact_triggers']
+                prompt['disclosure_instruction'] = (
+                    'Request a controlled fragment only when its stated trigger is supported '
+                    'by the current Code question, reply or actual tool evidence; state that '
+                    'evidence in reason. Do not reveal it merely because another round passed. '
+                    'Do not include untriggered, unreleased facts in public feedback.')
             if job.get("required_tests"):
                 prompt["required_tests"] = job["required_tests"]
                 prompt["required_test_instruction"] = (
@@ -1569,6 +1624,8 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
             if notice_attached:
                 self.persist()
             save(self.private / "judgments" / f"{identifier}-input.json", prompt)
+            if task.get('scenario'):
+                self.persist()
             self.agents["judge"].turn(
                 json.dumps(prompt, ensure_ascii=False), command_id=job["command_id"]
             )
@@ -1594,6 +1651,27 @@ class ProgressiveEpisode(UserViewMixin, OpenHandsEpisode):
             self.apply_decision(record)
         finally:
             self.agents["code"].unpause()
+
+    def apply_scenario_edits(self):
+        task = self.saved.get('tasks', [])[self.state.data['task_index']] if self.saved.get('tasks') else {}
+        edits = task.get('scenario', {}).get('repository_edits', [])
+        current = self.current()
+        if not edits or current.get('perturbation_applied'):
+            return
+        if current.get('perturbation_started'):
+            raise RuntimeError('Uncertain interrupted repository perturbation; inspect before resuming')
+        self.agents['code'].pause()
+        try:
+            current['perturbation_started'] = True
+            self.persist()
+            apply_repository_edits(self.root / 'workspace/candidate', edits)
+            current['perturbation_applied'] = True
+            self.persist()
+        finally:
+            self.agents['code'].unpause()
+
+    def before_code_turn(self):
+        self.apply_scenario_edits()
 
     def run(self):
         from .dialogue_export import export_dialogue

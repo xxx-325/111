@@ -62,6 +62,8 @@ for(const c of data.report.cases||[]){
  if(!items.length)el('p','未取得有效拆解；请查看原始记录，未生成预览。',left);
 }
 </script></html>'''
+    if report.get('scenario_preparation'):
+        page = page.replace('href="provider.jsonl"', 'href="provider.jsonl.gz"')
     (root/'index.html').write_text(page.replace('DATA_PLACEHOLDER',data))
 
 

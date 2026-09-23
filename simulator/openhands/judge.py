@@ -303,8 +303,12 @@ def review_verdict(relay, task, job, payload, events, observations, visible, pla
         '审核 Judge 结论，返回 JSON {verdict_valid:boolean,grounded:boolean,feedback_safe:boolean,required_failure_observed:boolean,reasons:[string]}。'
         '观察已显示候选违反完整 issue 必需行为时，uncertain 无效，应为 unsolved；uncertain 仅在关键证据缺失、环境阻塞或证据冲突时有效。'
         'required_failure_observed 表示当前观察是否已经证明任一必需行为不满足；它为 true 时 outcome 必须是 unsolved，unsolved 时它也必须为 true。'
+        '若提供 scenario，合成事实只按其 scope 判断，不伪称为原提交事实。请求释放受控片段时，核对该片段 trigger 是否由当前提问或真实观察满足，未满足则 verdict_valid=false；不能只因轮次增加而释放。'
+        '未触发且未释放的受控事实不能绕过片段释放而写进公开 feedback，否则 feedback_safe=false。'
         '结论必须由当前候选的观察支持。feedback 是短的用户真实可见结果；feedback_detail 只能是具体输入、实际输出/报错或使用条件。两者都不能含测试名/路径、源码根因、修复建议或未观察事实；reason 保持私有。闭合运行块中的 INPUT/RESULT/ERROR 必须完整且来自候选实际运行。不要改写。',
         dict(issue={k: task[k] for k in ('title', 'body')}, code_reply=job['code_reply'],
+             scenario=task.get('scenario_context', {}),
+             public_turn=job.get('public_turn', []),
              assessment_basis=assessment_basis(task.get('verification_mode','default')),
              verdict=payload, observations=observations, released_requirement=visible,
              fragments=[{'id': item['id'], 'category': item['category'], 'text': item['text']}

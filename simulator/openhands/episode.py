@@ -483,6 +483,9 @@ class OpenHandsEpisode(UserFinalFallbackMixin):
     def before_user_turn(self):
         """Optional host preparation, never a replacement agent loop."""
 
+    def before_code_turn(self):
+        """Apply task-local preparation before delivering the next public request."""
+
     def prepare_pending_transition(self, action):
         """Reapply deterministic host bindings used by transition review."""
         return copy.deepcopy(action)
@@ -954,6 +957,7 @@ class OpenHandsEpisode(UserFinalFallbackMixin):
                             pause_reason="User Agent stopped without a public send or task decision",
                         )
                 elif role == "code":
+                    self.before_code_turn()
                     message = self.state.data["messages"][-1]
                     # Stable command ID across uncertain delivery boundaries.
                     if not self.saved.get("in_flight"):

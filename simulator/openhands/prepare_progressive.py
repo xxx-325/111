@@ -83,8 +83,15 @@ def main():
         if isinstance(error,InvalidDecomposition):
             report['raw_draft']=error.draft
     report['budget']=budget.snapshot()
+    if config.get('scenario_file'):
+        report['scenario_preparation'] = True
     save(args.output/'report.json',report)
     render_preparation(args.output,report)
+    if config.get('scenario_file'):
+        from .retention import compact_preparation
+        clone = args.output / 'source'
+        compact_preparation(args.output, cloned_source=(clone if clone.exists()
+                            and not Path(config['repository']).expanduser().is_dir() else None))
     print(json.dumps({'status':report['status']}))
 
 

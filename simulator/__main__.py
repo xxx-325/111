@@ -42,6 +42,13 @@ def main():
         result = Episode(config, args.output, resume=args.resume).run()
     else:
         raise ValueError('unknown runtime; no automatic fallback')
+    if result == 'completed' and config.get('runtime') == 'openhands' and config.get('scenario_file'):
+        from .openhands.memory_episode import export_episode
+        from .openhands.retention import compact_completed_run
+        package = args.output.with_name(args.output.name + '-package')
+        export_episode(args.output, package)
+        compact_completed_run(args.output, package)
+        print(json.dumps({'package': str(package), 'runtime_state_removed': True}))
     print(json.dumps({'status': result, 'output': str(args.output)}, ensure_ascii=False))
     if result != 'completed':
         raise SystemExit(2)

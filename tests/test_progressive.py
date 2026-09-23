@@ -437,6 +437,34 @@ class JudgeTests(unittest.TestCase):
             episode.agents['judge'].turn.assert_not_called()
             self.assertIsNone(episode.progress['job'])
 
+    def test_scenario_judge_receives_public_tool_view_after_edits(self):
+        with tempfile.TemporaryDirectory() as root:
+            episode, candidate, mirror = self.snapshot_episode(root)
+            scenario = dict(repository_edits=[dict(path='docs/prompts.md', before='complete document\n',
+                                                   after='controlled candidate\n')])
+            episode.saved['tasks'][0]['scenario'] = scenario
+            episode.judgment_task.return_value.update(scenario_context={'current_facts': []})
+            episode.current()['fact_triggers'] = {'external1': dict(trigger='Code tries the old path')}
+            episode.saved['public'] = [dict(id='u', kind='user', timestamp=1, text='Try this'),
+                dict(id='call', kind='tool_call', timestamp=2, call_id='x', tool_name='terminal'),
+                dict(id='obs', kind='tool_result', timestamp=3, call_id='x', tool_name='terminal',
+                     observation={'PRIVATE': 'not delivered'}),
+                dict(id='code1', kind='assistant', phase='final', timestamp=4, text='It failed')]
+            (episode.private / 'code').mkdir()
+            (episode.private / 'code/provider.jsonl').write_text(json.dumps(dict(kind='request', input={'messages': [
+                dict(role='assistant', tool_calls=[dict(id='x', function=dict(name='terminal',
+                     arguments=json.dumps({'command': 'python old.py'})))]),
+                dict(role='tool', tool_call_id='x', content='old route failed')]})))
+            episode.budget = MagicMock()
+            episode.agents['judge'].turn.side_effect = RuntimeError('test Judge reached')
+            with self.assertRaisesRegex(RuntimeError, 'test Judge reached'):
+                episode.before_user_turn()
+            prompt = json.loads(episode.agents['judge'].turn.call_args.args[0])
+            self.assertEqual(prompt['public_turn'][2]['text'], 'old route failed')
+            self.assertNotIn('PRIVATE', json.dumps(prompt))
+            self.assertEqual((mirror / 'docs/prompts.md').read_text(), 'controlled candidate\n')
+            self.assertEqual(episode.progress['job']['public_turn'], prompt['public_turn'])
+
     def test_new_judge_review_refreshes_stale_snapshot_and_binds_its_hash(self):
         with tempfile.TemporaryDirectory() as root:
             episode, candidate, mirror = self.snapshot_episode(root)

@@ -62,6 +62,8 @@ def prepare(config, private, include_patch=True):
         repo = private / 'source'
         subprocess.run(['git', 'clone', '--mirror', f'https://github.com/{repository}.git', str(repo)], check=True, capture_output=True)
     if config.get('swe_chain_evo') is not None:
+        if config.get('scenario_file'):
+            raise ValueError('Controlled scenarios require the continuous commit task source')
         from .swe_chain_evo import load_chain
         base, tasks = load_chain(config, repo)
         return repo, base, tasks
@@ -115,4 +117,7 @@ def prepare(config, private, include_patch=True):
             if task['kind'] != 'commit' or task['base'] != previous:
                 raise ValueError('continuous commits must include every first-parent task in order')
             previous = task['reference']
+    if config.get('scenario_file'):
+        from .openhands.commit_scenario import expand_tasks, load_scenario
+        tasks = expand_tasks(tasks, load_scenario(config))
     return repo, base, tasks
